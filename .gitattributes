@@ -1,0 +1,2 @@
+# Keep generated third-party license documentation out of code statistics.
+RUST_LIBRARY_COPYRIGHT.html linguist-documentation
