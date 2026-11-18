@@ -41,6 +41,7 @@ pub struct Profile {
     pub remote_path: String,
     pub domain: String,
     pub redirect_clipboard: bool,
+    pub allow_unverified_rdp_certificate: bool,
     pub favorite: bool,
     pub encrypted_secret: Option<String>,
     pub tags: Vec<String>,
@@ -64,6 +65,7 @@ impl Default for Profile {
             remote_path: ".".into(),
             domain: String::new(),
             redirect_clipboard: false,
+            allow_unverified_rdp_certificate: false,
             favorite: false,
             encrypted_secret: None,
             tags: Vec::new(),
@@ -406,5 +408,23 @@ mod tests {
         p.protocol = Protocol::Rdp;
         p.username.clear();
         assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_rdp_profile_requires_server_authentication_until_explicitly_enabled() {
+        let mut profile = valid();
+        profile.protocol = Protocol::Rdp;
+        let mut legacy = serde_json::to_value(&profile).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("allow_unverified_rdp_certificate");
+        let loaded: Profile = serde_json::from_value(legacy).unwrap();
+        assert!(!loaded.allow_unverified_rdp_certificate);
+
+        profile.allow_unverified_rdp_certificate = true;
+        let loaded: Profile =
+            serde_json::from_value(serde_json::to_value(profile).unwrap()).unwrap();
+        assert!(loaded.allow_unverified_rdp_certificate);
     }
 }

@@ -9,6 +9,15 @@ use zeroize::Zeroizing;
 mod native;
 use native::{NativeRdp, OleGuard, Variant};
 
+// A certificate warning must never allow bypass unless this exact host opts in.
+fn rdp_server_authentication_level(profile: &Profile) -> u32 {
+    if profile.allow_unverified_rdp_certificate {
+        2 // Windows prompts before continuing after failed server authentication.
+    } else {
+        1 // Windows refuses the connection if server authentication fails.
+    }
+}
+
 #[derive(Clone, Copy)]
 enum RdpAction {
     Connect,
@@ -351,8 +360,10 @@ impl RdpSession {
         let settings = client.child("AdvancedSettings9")?;
         settings.put("RDPPort", Variant::int(self.profile.port as i32))?;
         settings.put("EnableCredSspSupport", Variant::boolean(true))?;
-        // AuthenticationLevel=2 preserves Windows warnings and user verification of server certificates.
-        settings.put("AuthenticationLevel", Variant::uint(2))?;
+        settings.put(
+            "AuthenticationLevel",
+            Variant::uint(rdp_server_authentication_level(&self.profile)),
+        )?;
         settings.put("NegotiateSecurityLayer", Variant::boolean(true))?;
         settings.put(
             "RedirectClipboard",
@@ -377,7 +388,12 @@ impl RdpSession {
         settings.put("ClearTextPassword", Variant::text(&self.secret)?)?;
         client.call("Connect", &mut [])?;
         self.status = "Connexion au bureau distant…".into();
-        self.detail = "Windows peut demander de vérifier le certificat du serveur ou de saisir vos identifiants.".into();
+        self.detail = (if self.profile.allow_unverified_rdp_certificate {
+            "Vérifiez le certificat dans l’avertissement Windows avant de poursuivre ; vos identifiants peuvent être demandés."
+        } else {
+            "Le certificat du serveur doit être approuvé par Windows ; vos identifiants peuvent être demandés."
+        })
+        .into();
         self.last_state = 2;
         self.connecting_since = Some(Instant::now());
         Ok(())
@@ -416,7 +432,7 @@ impl RdpSession {
                     self.detail = if reason != 0 {
                         host.client().description(reason)
                     } else {
-                        "Si la connexion a échoué, vérifiez l’adresse, le port, les identifiants et l’activation du Bureau à distance sur le serveur.".into()
+                        "Si la connexion a échoué, vérifiez l’adresse, le port, le certificat du serveur, les identifiants et l’activation du Bureau à distance.".into()
                     };
                     self.connecting_since = None;
                 }
@@ -488,6 +504,18 @@ fn open_windows_client(profile: &Profile) -> Result<(), String> {
     .join("RdpSessions");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let path = folder.join(format!("nexus-{}.rdp", uuid::Uuid::new_v4()));
+    let configuration = rdp_file_configuration(profile);
+    let mut bytes = vec![0xff, 0xfe];
+    bytes.extend(configuration.encode_utf16().flat_map(u16::to_le_bytes));
+    std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    Command::new(program)
+        .arg(&path)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn rdp_file_configuration(profile: &Profile) -> String {
     let host = profile.host.trim_matches(['[', ']']);
     let address = if host.contains(':') {
         format!("[{host}]:{}", profile.port)
@@ -499,23 +527,42 @@ fn open_windows_client(profile: &Profile) -> Result<(), String> {
     } else {
         format!("{}\\{}", profile.domain, profile.username)
     };
-    let configuration = format!(
-        "screen mode id:i:1\r\nfull address:s:{address}\r\nusername:s:{user}\r\nprompt for credentials:i:1\r\nenablecredsspsupport:i:1\r\nnegotiate security layer:i:1\r\nauthentication level:i:2\r\nredirectclipboard:i:{}\r\nredirectdrives:i:0\r\nredirectprinters:i:0\r\nredirectcomports:i:0\r\n",
-        u8::from(profile.redirect_clipboard)
-    );
-    let mut bytes = vec![0xff, 0xfe];
-    bytes.extend(configuration.encode_utf16().flat_map(u16::to_le_bytes));
-    std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
-    Command::new(program)
-        .arg(&path)
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    Ok(())
+    format!(
+        "screen mode id:i:1\r\nfull address:s:{address}\r\nusername:s:{user}\r\nprompt for credentials:i:1\r\nenablecredsspsupport:i:1\r\nnegotiate security layer:i:1\r\nauthentication level:i:{}\r\nredirectclipboard:i:{}\r\nredirectdrives:i:0\r\nredirectprinters:i:0\r\nredirectcomports:i:0\r\n",
+        rdp_server_authentication_level(profile),
+        u8::from(profile.redirect_clipboard),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_rdp_file_requires_authenticated_server_without_exposing_secret() {
+        let profile = Profile {
+            name: "Bureau de test".into(),
+            host: "192.0.2.40".into(),
+            port: 3389,
+            username: "utilisateur".into(),
+            protocol: crate::model::Protocol::Rdp,
+            encrypted_secret: Some("CHIFFREMENT-FICTIF-TEST".into()),
+            ..Default::default()
+        };
+        let configuration = rdp_file_configuration(&profile);
+        assert!(configuration.contains("authentication level:i:1\r\n"));
+        assert!(configuration.contains("enablecredsspsupport:i:1\r\n"));
+        assert!(configuration.contains("redirectclipboard:i:0\r\n"));
+        assert!(configuration.contains("redirectdrives:i:0\r\n"));
+        assert!(!configuration.contains("CHIFFREMENT-FICTIF-TEST"));
+
+        let mut explicitly_relaxed = profile;
+        explicitly_relaxed.allow_unverified_rdp_certificate = true;
+        assert_eq!(rdp_server_authentication_level(&explicitly_relaxed), 2);
+        assert!(
+            rdp_file_configuration(&explicitly_relaxed).contains("authentication level:i:2\r\n")
+        );
+    }
 
     #[test]
     fn rdp_pixel_viewport_preserves_fractional_dpi_edges() {

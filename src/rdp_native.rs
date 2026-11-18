@@ -734,7 +734,7 @@ mod tests {
                 .put("EnableCredSspSupport", Variant::boolean(true))
                 .unwrap();
             settings
-                .put("AuthenticationLevel", Variant::uint(2))
+                .put("AuthenticationLevel", Variant::uint(1))
                 .unwrap();
             settings
                 .put("NegotiateSecurityLayer", Variant::boolean(true))
@@ -742,7 +742,7 @@ mod tests {
             settings.put("SmartSizing", Variant::boolean(true)).unwrap();
             settings.put("RDPPort", Variant::int(3389)).unwrap();
             settings
-                .put("RedirectClipboard", Variant::boolean(true))
+                .put("RedirectClipboard", Variant::boolean(false))
                 .unwrap();
             for name in [
                 "RedirectDrives",
@@ -768,7 +768,7 @@ mod tests {
                 .put("ClearTextPassword", Variant::text("").unwrap())
                 .unwrap();
             assert_eq!(settings.int("EnableCredSspSupport").unwrap(), 1);
-            assert_eq!(settings.int("AuthenticationLevel").unwrap(), 2);
+            assert_eq!(settings.int("AuthenticationLevel").unwrap(), 1);
             assert_eq!(client.int("Connected").unwrap(), 0);
             host.position(0, 0, 800, 600);
         }

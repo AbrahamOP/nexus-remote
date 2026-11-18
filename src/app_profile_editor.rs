@@ -17,7 +17,29 @@ impl NexusApp {
                     if e.profile.protocol!=Protocol::Rdp{ui.horizontal(|ui|{for(mode,label)in[(AuthMode::Password,"Mot de passe"),(AuthMode::PrivateKey,"Clé SSH")]{if ui.selectable_label(e.profile.auth==mode,label).clicked(){e.profile.auth=mode;e.secret.zeroize();}}});if e.profile.auth==AuthMode::PrivateKey{field(ui,"Clé privée",&mut e.profile.private_key_path);if ui.button("Choisir un fichier de clé…").clicked(){if let Some(path)=rfd::FileDialog::new().set_title("Clé privée SSH").pick_file(){e.profile.private_key_path=path.display().to_string();}}}}
                     muted(ui,if e.profile.protocol!=Protocol::Rdp&&e.profile.auth==AuthMode::PrivateKey{"Phrase secrète (facultative)"}else{"Mot de passe (facultatif)"});ui.add_sized([ui.available_width(),34.0],egui::TextEdit::singleline(&mut *e.secret).password(true));ui.checkbox(&mut e.remember,"Mémoriser le secret sur ce compte Windows");
                 }else{muted(ui,"L’utilisateur et l’authentification viennent de l’identité sélectionnée.");}
-                egui::CollapsingHeader::new("Paramètres avancés et notes").show(ui,|ui|{if e.profile.protocol==Protocol::Rdp{field(ui,"Domaine Windows (facultatif)",&mut e.profile.domain);ui.checkbox(&mut e.profile.redirect_clipboard,"Partager le presse-papiers");}else{field(ui,"Dossier SFTP initial",&mut e.profile.remote_path);}muted(ui,"Notes");ui.add(egui::TextEdit::multiline(&mut e.profile.description).desired_rows(3).desired_width(f32::INFINITY));});ui.checkbox(&mut e.profile.favorite,"Ajouter aux favoris");
+                egui::CollapsingHeader::new("Paramètres avancés et notes").show(ui, |ui| {
+                    if e.profile.protocol == Protocol::Rdp {
+                        field(ui, "Domaine Windows (facultatif)", &mut e.profile.domain);
+                        ui.checkbox(&mut e.profile.redirect_clipboard, "Partager le presse-papiers");
+                        ui.checkbox(
+                            &mut e.profile.allow_unverified_rdp_certificate,
+                            "Autoriser un certificat RDP non vérifié",
+                        );
+                        muted(
+                            ui,
+                            "Permet de poursuivre après l’avertissement Windows si le serveur ne peut pas être authentifié. Vérifiez d’abord son identité : un faux serveur pourrait recevoir vos identifiants.",
+                        );
+                    } else {
+                        field(ui, "Dossier SFTP initial", &mut e.profile.remote_path);
+                    }
+                    muted(ui, "Notes");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut e.profile.description)
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+                ui.checkbox(&mut e.profile.favorite, "Ajouter aux favoris");
             });if !e.error.is_empty(){ui.colored_label(Color32::LIGHT_RED,&e.error);}ui.add_space(10.0);ui.horizontal(|ui|{save=primary(ui,"Enregistrer l’hôte").clicked();close=ui.button("Annuler").clicked();});
         });
         if save {

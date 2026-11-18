@@ -242,7 +242,13 @@ impl NexusApp {
                                             .cloned()
                                         {
                                             self.launch_queue
-                                                .push_back((p, LaunchTarget::Tunnel(rule.clone())));
+                                                .push_back((
+                                                    p,
+                                                    LaunchTarget::Tunnel {
+                                                        rule: rule.clone(),
+                                                        confirmed: false,
+                                                    },
+                                                ));
                                         }
                                     }
                                     if ui
@@ -540,6 +546,7 @@ impl NexusApp {
         self.group_modal(ctx);
         self.snippet_modal(ctx);
         self.tunnel_modal(ctx);
+        self.remote_tunnel_confirmation_modal(ctx);
         self.workspace_modal(ctx);
         self.entity_delete_modal(ctx);
         self.command_modal(ctx);
@@ -799,6 +806,58 @@ impl NexusApp {
         }
         if !close {
             self.snippet_editor = Some(e);
+        }
+    }
+    fn approve_remote_tunnel_start(&mut self) {
+        if let Some((profile, rule)) = self.remote_tunnel_confirmation.take() {
+            self.launch_queue.push_front((
+                profile,
+                LaunchTarget::Tunnel {
+                    rule,
+                    confirmed: true,
+                },
+            ));
+        }
+    }
+    fn remote_tunnel_confirmation_modal(&mut self, ctx: &egui::Context) {
+        let Some((profile, rule)) = self.remote_tunnel_confirmation.as_ref() else {
+            return;
+        };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::new("remote_tunnel_start")).show(ctx, |ui| {
+            ui.set_width(540.0);
+            ui.heading("Démarrer ce tunnel distant ?");
+            ui.add_space(8.0);
+            ui.label(format!(
+                "Serveur SSH : {} · {}:{}",
+                profile.name, profile.host, profile.port
+            ));
+            ui.label(format!(
+                "Port sur le serveur : {} → service sur ce PC : {}:{}",
+                rule.local_port, rule.destination_host, rule.destination_port
+            ));
+            ui.add_space(10.0);
+            ui.colored_label(
+                GOLD,
+                "Le serveur SSH peut rendre ce port accessible à d’autres machines si GatewayPorts=yes.",
+            );
+            ui.label(
+                "Nexus demande une écoute locale, mais le protocole SSH ne permet pas de vérifier l’adresse réellement utilisée par le serveur. Vérifiez sa configuration avant de continuer.",
+            );
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.button("Annuler").clicked() {
+                    answer = Some(false);
+                }
+                if primary(ui, "J’ai compris · Démarrer").clicked() {
+                    answer = Some(true);
+                }
+            });
+        });
+        match answer {
+            Some(true) => self.approve_remote_tunnel_start(),
+            Some(false) => self.remote_tunnel_confirmation = None,
+            None => {}
         }
     }
     fn tunnel_modal(&mut self, ctx: &egui::Context) {
@@ -1169,5 +1228,115 @@ impl NexusApp {
         } else {
             self.pending_close = Some(pending);
         }
+    }
+}
+
+#[cfg(test)]
+mod remote_tunnel_security_tests {
+    use super::*;
+
+    fn fixture() -> (NexusApp, Profile, TunnelRule) {
+        let mut store = Store::empty();
+        store.data_dir =
+            std::env::temp_dir().join(format!("nexus-remote-tunnel-test-{}", uuid::Uuid::new_v4()));
+        let profile = Profile {
+            id: "remote-tunnel-fixture-profile".into(),
+            name: "Serveur fictif".into(),
+            host: "192.0.2.20".into(),
+            port: 22,
+            username: "test".into(),
+            ..Default::default()
+        };
+        let rule = TunnelRule {
+            id: "remote-tunnel-fixture-rule".into(),
+            name: "Service fictif".into(),
+            profile_id: profile.id.clone(),
+            local_host: "127.0.0.1".into(),
+            local_port: 5433,
+            destination_host: "127.0.0.1".into(),
+            destination_port: 5432,
+            kind: TunnelKind::Remote,
+        };
+        store.state.profiles.push(profile.clone());
+        (NexusApp::from_store(store, None, 0), profile, rule)
+    }
+
+    fn has_warning(shape: &egui::epaint::Shape) -> bool {
+        match shape {
+            egui::epaint::Shape::Text(text) => text.galley.job.text.contains("GatewayPorts"),
+            egui::epaint::Shape::Vec(shapes) => shapes.iter().any(has_warning),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn each_remote_tunnel_start_requires_a_fresh_visible_confirmation() {
+        let (mut direct, direct_profile, direct_rule) = fixture();
+        let direct_ctx = egui::Context::default();
+        direct.dispatch_launch(
+            direct_profile,
+            String::new(),
+            LaunchTarget::Tunnel {
+                rule: direct_rule,
+                confirmed: false,
+            },
+            &direct_ctx,
+        );
+        assert!(direct.error.is_some());
+        assert!(direct.active_tunnels.is_empty());
+
+        let (mut app, profile, rule) = fixture();
+        let ctx = egui::Context::default();
+        app.launch_queue.push_back((
+            profile.clone(),
+            LaunchTarget::Tunnel {
+                rule: rule.clone(),
+                confirmed: false,
+            },
+        ));
+        app.pump_launch(&ctx);
+        assert!(app.remote_tunnel_confirmation.is_some());
+        assert!(app.has_modal());
+        assert!(app.launch_queue.is_empty());
+        assert!(app.active_tunnels.is_empty());
+
+        design::apply_theme(&ctx);
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(1320.0, 850.0),
+            )),
+            focused: true,
+            ..Default::default()
+        };
+        // A newly created egui Area uses its first frame to measure its contents.
+        let _ = ctx.run(input(), |ctx| app.remote_tunnel_confirmation_modal(ctx));
+        let output = ctx.run(input(), |ctx| app.remote_tunnel_confirmation_modal(ctx));
+        assert!(output.shapes.iter().any(|shape| has_warning(&shape.shape)));
+        assert!(app.remote_tunnel_confirmation.is_some());
+
+        app.approve_remote_tunnel_start();
+        assert!(app.remote_tunnel_confirmation.is_none());
+        assert!(matches!(
+            app.launch_queue.front().map(|(_, target)| target),
+            Some(LaunchTarget::Tunnel {
+                confirmed: true,
+                ..
+            })
+        ));
+        app.pump_launch(&ctx); // Offline fixture drops the approved request without a socket.
+        assert!(app.launch_queue.is_empty());
+        assert!(app.active_tunnels.is_empty());
+
+        app.launch_queue.push_back((
+            profile,
+            LaunchTarget::Tunnel {
+                rule,
+                confirmed: false,
+            },
+        ));
+        app.pump_launch(&ctx);
+        assert!(app.remote_tunnel_confirmation.is_some());
+        assert!(app.launch_queue.is_empty());
     }
 }

@@ -348,6 +348,11 @@ impl Store {
             p.validate()?;
             p.id = uuid::Uuid::new_v4().to_string();
             p.encrypted_secret = None;
+            // Security exceptions must be chosen again for each imported RDP host.
+            if p.protocol == Protocol::Rdp {
+                p.allow_unverified_rdp_certificate = false;
+                p.redirect_clipboard = false;
+            }
         }
         let count = profiles.len();
         let original_len = self.state.profiles.len();
@@ -558,6 +563,22 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&vec![profile]).unwrap()).unwrap();
         s.import(&path).unwrap();
         assert!(s.state.profiles[0].encrypted_secret.is_none());
+    }
+    #[test]
+    fn import_resets_rdp_certificate_exception_and_clipboard_sharing() {
+        let dir = test_dir();
+        let mut store = Store::load_at(dir.clone()).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let mut profile = p();
+        profile.protocol = Protocol::Rdp;
+        profile.port = 3389;
+        profile.allow_unverified_rdp_certificate = true;
+        profile.redirect_clipboard = true;
+        let path = dir.join("rdp-import.json");
+        fs::write(&path, serde_json::to_vec(&vec![profile]).unwrap()).unwrap();
+        assert_eq!(store.import(&path).unwrap(), 1);
+        assert!(!store.state.profiles[0].allow_unverified_rdp_certificate);
+        assert!(!store.state.profiles[0].redirect_clipboard);
     }
     #[test]
     fn old_v1_data_keeps_secrets_and_creates_exact_backup_only_on_save() {

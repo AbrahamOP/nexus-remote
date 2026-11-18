@@ -110,7 +110,7 @@ struct Editor {
 #[derive(Clone)]
 enum LaunchTarget {
     Session,
-    Tunnel(TunnelRule),
+    Tunnel { rule: TunnelRule, confirmed: bool },
 }
 struct AuthPrompt {
     profile: Profile,
@@ -181,6 +181,7 @@ pub struct NexusApp {
     group_editor: Option<GroupEditor>,
     snippet_editor: Option<SnippetEditor>,
     tunnel_editor: Option<TunnelEditor>,
+    remote_tunnel_confirmation: Option<(Profile, TunnelRule)>,
     workspace_editor: Option<WorkspaceEditor>,
     entity_delete: Option<EntityDelete>,
     command_run: Option<CommandRun>,
@@ -252,6 +253,7 @@ impl NexusApp {
             group_editor: None,
             snippet_editor: None,
             tunnel_editor: None,
+            remote_tunnel_confirmation: None,
             workspace_editor: None,
             entity_delete: None,
             command_run: None,
@@ -325,6 +327,7 @@ impl NexusApp {
             || self.group_editor.is_some()
             || self.snippet_editor.is_some()
             || self.tunnel_editor.is_some()
+            || self.remote_tunnel_confirmation.is_some()
             || self.workspace_editor.is_some()
             || self.entity_delete.is_some()
             || self.command_run.is_some()
@@ -399,17 +402,28 @@ impl NexusApp {
         self.launch_queue.push_back((p, LaunchTarget::Session));
     }
     fn pump_launch(&mut self, ctx: &egui::Context) {
-        #[cfg(test)]
-        if self.hwnd == 0 {
-            self.launch_queue.clear();
-            return;
-        }
         if self.has_modal() || self.pane_modal() {
             return;
         }
         let Some((original, target)) = self.launch_queue.pop_front() else {
             return;
         };
+        if let LaunchTarget::Tunnel {
+            rule,
+            confirmed: false,
+        } = &target
+        {
+            if rule.kind == TunnelKind::Remote {
+                self.remote_tunnel_confirmation = Some((original, rule.clone()));
+                ctx.request_repaint();
+                return;
+            }
+        }
+        #[cfg(test)]
+        if self.hwnd == 0 {
+            self.launch_queue.clear();
+            return;
+        }
         let p = match self.store.state.resolved_profile(&original) {
             Ok(p) => p,
             Err(e) => {
@@ -454,7 +468,12 @@ impl NexusApp {
     ) {
         match target {
             LaunchTarget::Session => self.start_session(p, secret, ctx),
-            LaunchTarget::Tunnel(rule) => {
+            LaunchTarget::Tunnel { rule, confirmed } => {
+                if rule.kind == TunnelKind::Remote && !confirmed {
+                    self.error =
+                        Some("Ce tunnel distant doit être confirmé avant chaque démarrage.".into());
+                    return;
+                }
                 let id = rule.id.clone();
                 match TunnelSession::new(p, secret, rule, self.trust.clone(), ctx.clone()) {
                     Ok(s) => {

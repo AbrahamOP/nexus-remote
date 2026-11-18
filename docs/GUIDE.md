@@ -12,6 +12,12 @@ Extraire le ZIP, fermer l’ancienne version et ouvrir `NexusRemote.exe` sans ar
 
 Le carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`. Les anciennes connexions sont conservées. Lors de la première mise à jour depuis la version 0.1, la première écriture garde une copie exacte de cet ancien fichier dans `connections.v0.1-backup.json`. Un fichier invalide est conservé ; une seule instance peut ouvrir le même carnet.
 
+## Vérification du certificat RDP et tunnels distants 0.3.5
+
+Pour les connexions RDP intégrées et celles ouvertes avec le client Windows, Nexus exige par défaut que Windows authentifie le serveur. Un ancien profil sans réglage de certificat suit aussi cette règle. Dans les paramètres avancés de chaque hôte RDP, **Autoriser un certificat RDP non vérifié** permet explicitement de poursuivre après un avertissement Windows. Cette exception concerne seulement cet hôte ; elle ne vaut pas approbation du certificat. Si la connexion échoue avec la règle stricte, vérifier le certificat et le nom du serveur avant d’envisager l’exception. Ne saisir aucun identifiant dans une session dont l’identité reste douteuse.
+
+Chaque démarrage d’un tunnel SSH distant `-R` montre l’hôte, le port et la destination, puis demande une confirmation. Le client demande une écoute loopback, mais le serveur SSH peut imposer une écoute publique avec `GatewayPorts yes`. Nexus ne reçoit pas l’adresse d’écoute effective dans la réponse SSH et ne peut donc pas garantir que le port est privé. Vérifier `GatewayPorts no` ou `clientspecified` sur le serveur et, si nécessaire, contrôler l’écoute directement sur celui-ci.
+
 ## Correctif de saisie SSH 0.3.3
 
 Cette version corrige la reprise du clavier après un passage entre RDP et SSH. Lorsqu’une vue RDP est masquée, le clavier revient à Nexus seulement si l’application est au premier plan et si ce contrôle distant détenait le focus ; les autres contrôles et applications gardent leur focus.
@@ -49,8 +55,8 @@ Cette version conserve les fonctions des versions 0.2, 0.3 et 0.3.1 ainsi que le
 - **Vue partagée** : deux sessions côte à côte ou empilées. Les espaces de travail enregistrent une sélection d’hôtes à rouvrir ensemble, sur action explicite.
 - **Snippets** : enregistrer, copier et insérer des commandes. L’exécution montre la commande et les sessions SSH sélectionnées avant l’envoi avec Entrée, y compris sur plusieurs sessions.
 - **SFTP** : fichiers locaux/distants, filtres, fichiers masqués, navigation, envoi/téléchargement, progression et annulation. Création, renommage et suppression de fichiers ou dossiers vides. Éditeur UTF-8 jusqu’à 1 Mo avec sauvegarde confirmée, détection des modifications concurrentes et remplacement protégé.
-- **Tunnels SSH** : redirection locale `-L` avec écoute loopback, et redirection distante `-R`. Pour `-R`, Nexus demande loopback mais le serveur contrôle l'adresse réellement écoutée : `GatewayPorts yes` peut exposer le port au réseau. Vérifier `GatewayPorts no` ou `clientspecified` sur le serveur avant de démarrer. Flux simultanés et tampons bornés.
-- **RDP** : contrôle Windows dans l’onglet, NLA/CredSSP, ajustement, plein écran et presse-papiers configurable. Windows conserve ses avertissements de certificat. Le client Windows séparé reste accessible sans mot de passe dans le fichier `.rdp`.
+- **Tunnels SSH** : redirection locale `-L` avec écoute loopback, et redirection distante `-R` avec confirmation à chaque démarrage. Pour `-R`, Nexus demande loopback mais le serveur contrôle l’adresse réellement écoutée : `GatewayPorts yes` peut exposer le port au réseau. Vérifier `GatewayPorts no` ou `clientspecified` sur le serveur avant de démarrer. Flux simultanés et tampons bornés.
+- **RDP** : contrôle Windows dans l’onglet, NLA/CredSSP, ajustement, plein écran et presse-papiers configurable. Authentification du certificat obligatoire par défaut, avec exception avancée par hôte permettant de poursuivre après un avertissement Windows. Le client Windows séparé reste accessible sans mot de passe dans le fichier `.rdp`.
 
 ## Données et sécurité
 
@@ -58,7 +64,11 @@ Les métadonnées du carnet (adresses, noms, notes, commandes et chemins) resten
 
 La première connexion SSH/SFTP présente l’empreinte SHA-256 avant authentification. Comparer cette empreinte avec celle du serveur avant acceptation. Une clé modifiée est refusée ; les clés connues se gèrent dans **Empreintes SSH**.
 
+La compilation de cette version utilise OpenSSL 3.5.9 LTS. Au 19 novembre 2026, il s’agit de la dernière publication de la branche 3.5 répertoriée par OpenSSL. Les [avis du 10 novembre](https://openssl-library.org/news/secadv/20261110.txt) et [du 17 novembre](https://openssl-library.org/news/secadv/20261117.txt) signalent huit problèmes de gravité *Low* affectant cette branche. Leurs corrections figurent dans le dépôt amont ; la publication 3.5.10 qui les contiendra est annoncée pour le 1er décembre 2026. Leur applicabilité précise au transport SSH de Nexus n’a pas été établie. La branche 3.6 précédemment intégrée est [hors support depuis le 1er novembre 2026](https://openssl-library.org/post/2026-11-01-eol34-36/).
+
 L’import JSON et l’import de blocs explicites OpenSSH `Host` sont disponibles. L’import OpenSSH reprend HostName, User, Port et IdentityFile. Include et ProxyCommand ne sont pas exécutés ; une configuration SSH complète n’est pas reproduite.
+
+À l’import JSON, les exceptions de certificat RDP non vérifié et le partage du presse-papiers RDP sont désactivés pour chaque hôte importé. Vous pouvez les réactiver dans les paramètres avancés après vérification.
 
 ## Raccourcis
 
@@ -76,23 +86,24 @@ Prérequis sur Windows x64 :
 
 - Rust stable installé avec rustup pour `x86_64-pc-windows-msvc`.
 - Visual Studio 2022 Build Tools avec la charge **Développement Desktop en C++**, les outils MSVC x64 et le SDK Windows.
-- Perl dans `PATH` (par exemple Strawberry Perl), nécessaire à la compilation d’OpenSSL embarqué.
+- Perl et `tar.exe` dans `PATH` (par exemple Strawberry Perl et le `tar.exe` de Windows), nécessaires à la compilation d’OpenSSL.
 
 Depuis le dossier du dépôt, ouvrir un **Developer PowerShell for VS 2022** configuré pour x64, puis lancer :
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-openssl.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Test
 ```
 
-Le script vérifie les outils déjà installés, compile la version release et exécute les tests avec `-Test`. Il n’installe ni ne met à jour Rust, Perl ou le SDK. Cargo récupère les dépendances de `Cargo.lock` au premier build ; `-Offline` permet de travailler sans réseau une fois leur cache rempli. Le runtime C est lié statiquement via `.cargo/config.toml`. Aucun dossier ni script extérieur au dépôt n’est nécessaire.
+`build-openssl.ps1` récupère l’archive officielle d’OpenSSL 3.5.9 LTS et vérifie son SHA-256 avant de l’extraire. Il compile OpenSSL pour MSVC x64, lance sa suite de tests et installe la bibliothèque statique sous `.local-build\openssl-3.5.9\install`. Il crée un manifeste d’empreintes pour les bibliothèques installées et refuse de réutiliser des sources extraites lors d’une relance ; utilisez un nouveau `-OutputDir` pour refaire la compilation. Pour un build sans réseau, fournir une archive déjà téléchargée avec `-SourceArchive CHEMIN -Offline`. `build.ps1` vérifie le manifeste et configure Cargo pour la lier statiquement sans revenir à l’ancienne copie OpenSSL 3.6 hors support. Il teste toujours la version OpenSSL liée, puis exécute toute la suite Rust avec `-Test`.
 
-Les commandes Cargo équivalentes, dans le même environnement de compilation, sont `cargo build --release --locked` puis `cargo test --release --locked`.
+Les scripts n’installent ni ne mettent à jour Rust, Perl ou le SDK. Cargo récupère les dépendances de `Cargo.lock` au premier build ; `-Offline` permet de travailler sans réseau une fois leur cache rempli. Le runtime C est lié statiquement via `.cargo/config.toml`. Pour lancer Cargo directement, définir `OPENSSL_DIR` vers l’installation validée, `OPENSSL_STATIC=1` et `OPENSSL_NO_VENDOR=1` dans le même terminal. Ces variables sont définies automatiquement par `build.ps1`.
 
 Tests réseau facultatifs : Python 3.10+ avec `paramiko` et `cryptography` déjà installés, puis `powershell -ExecutionPolicy Bypass -File tests/run-loopback.ps1 -Python python`. Le script crée ses propres fichiers sous `test-work`, utilise uniquement localhost et arrête la fixture en fin de test.
 
 `--data-dir CHEMIN` sélectionne un carnet séparé pour les essais. L’exécutable compilé est `target\release\nexus-remote.exe`.
 
-Références : [concepts Termius](https://docs.termius.com/getting-started/what-is-termius), [espaces](https://docs.termius.com/terminal/workspaces), [SFTP](https://docs.termius.com/organize-and-connect-to-hosts/managing-files-with-sftp), [egui](https://github.com/emilk/egui), [ssh2-rs](https://docs.rs/ssh2/), [RDP Microsoft](https://learn.microsoft.com/en-us/windows/win32/termserv/msrdpclient9).
+Références : [concepts Termius](https://docs.termius.com/getting-started/what-is-termius), [espaces](https://docs.termius.com/terminal/workspaces), [SFTP](https://docs.termius.com/organize-and-connect-to-hosts/managing-files-with-sftp), [egui](https://github.com/emilk/egui), [ssh2-rs](https://docs.rs/ssh2/), [RDP Microsoft](https://learn.microsoft.com/en-us/windows/win32/termserv/msrdpclient9), [niveaux d’authentification du serveur RDP](https://learn.microsoft.com/en-us/windows/win32/termserv/imsrdpclientadvancedsettings4-authenticationlevel), [configuration OpenSSH `GatewayPorts`](https://man.openbsd.org/sshd_config.5).
 
 Les licences sont incluses dans LICENSE, THIRD_PARTY_NOTICES.md, THIRD_PARTY_LICENSES.txt et RUST_LIBRARY_COPYRIGHT.html. Les polices Windows sont lues depuis le système lorsqu’elles sont présentes et ne sont pas redistribuées.
 

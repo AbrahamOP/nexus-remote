@@ -2,6 +2,7 @@
 /test-work/
 /dist/
 /artifacts/
+/.local-build/
 *.log
 *.pdb
 *.tmp

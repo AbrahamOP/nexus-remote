@@ -2,7 +2,7 @@
 
 This release uses open-source libraries and embedded fonts. Their original copyright notices and license texts are reproduced in **THIRD_PARTY_LICENSES.txt**, which must accompany redistributions of this application.
 
-The inventory was generated from this release's Cargo.lock and the actual published package sources. It records 383 registry packages across all platforms, including optional dependencies and tools used only during compilation. The Windows normal/build dependency graph contains 162 third-party packages. Full standalone or original upstream license texts are present for every package in that Windows graph; optional packages for other targets are listed for source-resolution traceability.
+The inventory was generated from this release's Cargo.lock and the actual published package sources. It records 382 registry packages across all platforms, including optional dependencies and tools used only during compilation. The Windows normal/build dependency graph contains 161 third-party packages. Full standalone or original upstream license texts are present for every package in that Windows graph; optional packages for other targets are listed for source-resolution traceability.
 
 ## Main components
 
@@ -14,7 +14,6 @@ The inventory was generated from this release's Cargo.lock and the actual publis
 | epaint_default_fonts | 0.33.3 | (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0 |
 | libssh2-sys | 0.3.4 | MIT OR Apache-2.0 |
 | libz-sys | 1.1.33 | MIT OR Apache-2.0 |
-| openssl-src | 300.6.1+3.6.3 | MIT/Apache-2.0 |
 | openssl-sys | 0.9.118 | MIT |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | rfd | 0.15.4 | MIT |
@@ -28,11 +27,9 @@ The inventory was generated from this release's Cargo.lock and the actual publis
 | winresource | 0.1.34 | MIT |
 | zeroize | 1.9.1 | Apache-2.0 OR MIT |
 
-Historical MIT/Apache-2.0 notation in the openssl-src manifest denotes the MIT or Apache-2.0 alternatives. These Rust wrapper licenses are separate from the bundled native library licenses described below.
-
 - **eframe / egui**: native application framework and GUI, by Emil Ernerfeldt and contributors. Source and documentation: https://github.com/emilk/egui . The upstream MIT and Apache-2.0 files from the exact published source commit are included.
 - **libssh2**, vendored by libssh2-sys, supplies SSH/SFTP transport. Its BSD-3-Clause COPYING file and 25 distinct complete copyright/license blocks from its native source headers are reproduced. Upstream: https://www.libssh2.org/ . The source snapshot identifies itself as libssh2 1.11.2_DEV.
-- **OpenSSL 3.6.3**, vendored by openssl-src 300.6.1+3.6.3, provides cryptography for SSH. Its original Apache License 2.0 text is included under openssl-src / openssl/LICENSE.txt, separately from the Rust wrapper's MIT/Apache licensing. Upstream: https://www.openssl.org/ . No separate Perl interpreter is distributed with Nexus Remote.
+- **OpenSSL 3.5.9 LTS**, built separately from the official source archive and linked statically, provides cryptography for SSH. The archive SHA-256 is 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a. Its original Apache License 2.0 text is included in assets/licenses/OpenSSL-3.5.9-LICENSE.txt and in THIRD_PARTY_LICENSES.txt. Upstream: https://www.openssl-library.org/source/ . No separate Perl interpreter is distributed with Nexus Remote.
 - **zlib 1.4**, vendored by libz-sys, is copyright (C) 1995–2026 Jean-loup Gailly and Mark Adler. Its complete zlib.h copyright and license block is included. Upstream: https://zlib.net/ .
 - **Khronos registry data** used to generate graphics bindings: 6 distinct original XML copyright/license notices are reproduced alongside the generator's full Apache-2.0 license.
 - **Rust standard library**: the exact compiler-distributed library copyright manifest is preserved in RUST_LIBRARY_COPYRIGHT.html, including its transitive runtime-component licenses. This covers the statically included Rust library separately from the application's Cargo packages.
@@ -40,14 +37,7 @@ Historical MIT/Apache-2.0 notation in the openssl-src manifest denotes the MIT o
 
 ## Embedded fonts
 
-The main UI fonts are embedded from their original upstream font files:
-
-- **Inter**: Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter), SIL Open Font License 1.1. Original notice: `licenses/Inter-OFL.txt` in the Windows package and `assets/fonts/Inter-OFL.txt` in the source package.
-- **JetBrains Mono**: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono), SIL Open Font License 1.1. Original notice: `licenses/JetBrainsMono-OFL.txt` in the Windows package and `assets/fonts/JetBrainsMono-OFL.txt` in the source package.
-
-Both complete original license files are also appended to THIRD_PARTY_LICENSES.txt. Windows symbol fallback fonts are loaded from the installed operating system and are not redistributed.
-
-Fallback fonts from epaint_default_fonts 0.33.3 are embedded without modification. The complete supplied notices are included:
+Default fonts come from epaint_default_fonts 0.33.3 and are embedded without modification. The complete supplied notices are included:
 
 - **Hack Regular**: Source Foundry authors (MIT), DejaVu contributions (public domain), and Bitstream Vera origins (Bitstream Vera license). See fonts/Hack-Regular.txt.
 - **Noto Emoji Regular**: Copyright 2013 Google Inc., SIL Open Font License 1.1, fonts/OFL.txt.
@@ -251,7 +241,6 @@ Windows / build identifies packages in cargo tree --target x86_64-pc-windows-msv
 | objc2-uniform-type-identifiers | 0.2.2 | MIT | Other / optional |
 | objc2-user-notifications | 0.2.2 | MIT | Other / optional |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | Windows / build |
-| openssl-src | 300.6.1+3.6.3 | MIT/Apache-2.0 | Windows / build |
 | openssl-sys | 0.9.118 | MIT | Windows / build |
 | orbclient | 0.3.55 | MIT | Other / optional |
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 | Other / optional |
@@ -448,4 +437,4 @@ Windows / build identifies packages in cargo tree --target x86_64-pc-windows-msv
 
 ## Source record
 
-The full-text file reproduces 651 standalone license/notice files, plus the native-source and embedded-font notices. Files are labeled using package-relative paths; original hashes and exact upstream commit URLs are retained. Package source archives are available through the versioned crates.io links recorded in that file. The Nexus Remote source archive includes Cargo.lock to reproduce dependency resolution.
+The full-text file reproduces 647 standalone license/notice files, plus the native-source and embedded-font notices. Files are labeled using package-relative paths; original hashes and exact upstream commit URLs are retained. Package source archives are available through the versioned crates.io links recorded in that file. The Nexus Remote source archive includes Cargo.lock to reproduce dependency resolution.
