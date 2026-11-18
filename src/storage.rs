@@ -5,6 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -182,13 +183,25 @@ pub struct Store {
     pub state: State,
     pub data_dir: PathBuf,
 }
+fn user_local_data_dir(
+    local: Option<OsString>,
+    profile: Option<OsString>,
+    roaming: Option<OsString>,
+) -> Option<PathBuf> {
+    let absolute = |value: Option<OsString>| value.map(PathBuf::from).filter(|p| p.is_absolute());
+    absolute(local)
+        .or_else(|| absolute(profile).map(|p| p.join("AppData").join("Local")))
+        .or_else(|| absolute(roaming))
+}
 impl Store {
     pub fn default_dir() -> PathBuf {
-        PathBuf::from(
-            std::env::var_os("LOCALAPPDATA")
-                .unwrap_or_else(|| std::env::temp_dir().into_os_string()),
+        user_local_data_dir(
+            std::env::var_os("LOCALAPPDATA"),
+            std::env::var_os("USERPROFILE"),
+            std::env::var_os("APPDATA"),
         )
-        .join("NexusRemoteRust")
+        .map(|base| base.join("NexusRemoteRust"))
+        .unwrap_or_default()
     }
     pub fn empty() -> Self {
         Self {
@@ -200,7 +213,11 @@ impl Store {
         }
     }
     pub fn load() -> Result<Self, String> {
-        Self::load_at(Self::default_dir())
+        let data_dir = Self::default_dir();
+        if data_dir.as_os_str().is_empty() {
+            return Err("Dossier utilisateur Windows introuvable : LOCALAPPDATA, USERPROFILE et APPDATA sont absents ou invalides.".into());
+        }
+        Self::load_at(data_dir)
     }
     pub fn load_at(data_dir: PathBuf) -> Result<Self, String> {
         let file = data_dir.join("connections.json");
@@ -225,6 +242,11 @@ impl Store {
         Ok(Self { state, data_dir })
     }
     pub fn save(&self) -> Result<(), String> {
+        if self.data_dir.as_os_str().is_empty() {
+            return Err(
+                "Dossier utilisateur Windows introuvable. Le carnet n’a pas été écrit.".into(),
+            );
+        }
         self.state.validate()?;
         let bytes = serde_json::to_vec_pretty(&self.state).map_err(|e| e.to_string())?;
         if bytes.len() > 10_000_000 {
@@ -438,6 +460,32 @@ pub fn unprotect(encoded: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn default_data_location_never_uses_a_shared_temp_directory() {
+        let profile = PathBuf::from(r"C:\Users\fixture");
+        let local = profile.join("AppData").join("Local");
+        let roaming = profile.join("AppData").join("Roaming");
+        assert_eq!(user_local_data_dir(None, None, None), None);
+        assert_eq!(
+            user_local_data_dir(None, Some(profile.clone().into_os_string()), None),
+            Some(local.clone())
+        );
+        assert_eq!(
+            user_local_data_dir(
+                Some(local.clone().into_os_string()),
+                Some(profile.into_os_string()),
+                Some(roaming.into_os_string()),
+            ),
+            Some(local)
+        );
+        assert_eq!(
+            user_local_data_dir(Some("relative\\temp".into()), None, None),
+            None
+        );
+        let mut store = Store::empty();
+        store.data_dir = PathBuf::new();
+        assert!(store.save().is_err());
+    }
     fn test_dir() -> PathBuf {
         std::env::temp_dir().join(format!("nexus-rust-test-{}", uuid::Uuid::new_v4()))
     }

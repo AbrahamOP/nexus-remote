@@ -1061,15 +1061,33 @@ fn read_remote(
     let mut handle = sftp
         .opendir(Path::new(&directory))
         .map_err(|e| e.to_string())?;
+    // A server can keep returning directory entries indefinitely. Bound both
+    // the result held in memory and the number of entries we accept from it.
+    const MAX_REMOTE_ENTRIES: usize = 20_000;
     let mut entries = Vec::new();
+    let mut seen_entries = 0usize;
     loop {
         check_cancel(cancelled)?;
         match handle.readdir() {
             Ok((name, stat)) => {
-                let name = name.to_string_lossy().into_owned();
+                if seen_entries >= MAX_REMOTE_ENTRIES {
+                    return Err(
+                        "Ce dossier distant contient plus de 20 000 entrées. Ouvrez un dossier plus précis pour éviter de saturer la mémoire."
+                            .into(),
+                    );
+                }
+                seen_entries += 1;
+                let name = name.to_string_lossy();
+                if name.len() > 255 {
+                    return Err(
+                        "Le serveur a renvoyé un nom de fichier trop long (255 octets maximum)."
+                            .into(),
+                    );
+                }
                 if name == "." || name == ".." {
                     continue;
                 }
+                let name = name.into_owned();
                 let actionable = valid_remote_name(&name);
                 entries.push(Entry {
                     path: remote_join(&directory, &name),
@@ -1472,6 +1490,7 @@ fn sort_entries(entries: &mut [Entry]) {
 }
 fn valid_remote_name(name: &str) -> bool {
     !name.trim().is_empty()
+        && name.len() <= 255
         && name != "."
         && name != ".."
         && !name
@@ -1479,7 +1498,7 @@ fn valid_remote_name(name: &str) -> bool {
             .any(|c| c == '/' || c == '\\' || c.is_control())
 }
 fn valid_remote_path(path: &str) -> bool {
-    !path.is_empty() && !path.chars().any(|c| c == '\\' || c.is_control())
+    !path.is_empty() && path.len() <= 4096 && !path.chars().any(|c| c == '\\' || c.is_control())
 }
 fn valid_remote_item_path(path: &str) -> bool {
     valid_remote_path(path)

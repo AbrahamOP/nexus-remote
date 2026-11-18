@@ -49,7 +49,7 @@ Cette version conserve les fonctions des versions 0.2, 0.3 et 0.3.1 ainsi que le
 - **Vue partagée** : deux sessions côte à côte ou empilées. Les espaces de travail enregistrent une sélection d’hôtes à rouvrir ensemble, sur action explicite.
 - **Snippets** : enregistrer, copier et insérer des commandes. L’exécution montre la commande et les sessions SSH sélectionnées avant l’envoi avec Entrée, y compris sur plusieurs sessions.
 - **SFTP** : fichiers locaux/distants, filtres, fichiers masqués, navigation, envoi/téléchargement, progression et annulation. Création, renommage et suppression de fichiers ou dossiers vides. Éditeur UTF-8 jusqu’à 1 Mo avec sauvegarde confirmée, détection des modifications concurrentes et remplacement protégé.
-- **Tunnels SSH** : redirection locale `-L` et distante `-R`, démarrage/arrêt et état visible. Écoute loopback uniquement ; flux simultanés et tampons bornés.
+- **Tunnels SSH** : redirection locale `-L` avec écoute loopback, et redirection distante `-R`. Pour `-R`, Nexus demande loopback mais le serveur contrôle l'adresse réellement écoutée : `GatewayPorts yes` peut exposer le port au réseau. Vérifier `GatewayPorts no` ou `clientspecified` sur le serveur avant de démarrer. Flux simultanés et tampons bornés.
 - **RDP** : contrôle Windows dans l’onglet, NLA/CredSSP, ajustement, plein écran et presse-papiers configurable. Windows conserve ses avertissements de certificat. Le client Windows séparé reste accessible sans mot de passe dans le fichier `.rdp`.
 
 ## Données et sécurité

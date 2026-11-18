@@ -63,7 +63,7 @@ impl Default for Profile {
             private_key_path: String::new(),
             remote_path: ".".into(),
             domain: String::new(),
-            redirect_clipboard: true,
+            redirect_clipboard: false,
             favorite: false,
             encrypted_secret: None,
             tags: Vec::new(),

@@ -18,7 +18,7 @@ Nexus Remote est un gestionnaire de connexions **SSH, SFTP et RDP pour Windows**
 
 Le carnet réunit groupes, étiquettes, notes, favoris et connexions récentes. Les identités permettent de réutiliser un utilisateur et son authentification entre plusieurs hôtes. La connexion rapide ouvre un accès depuis une recherche, une adresse ou une URI `ssh://`, `sftp://` ou `rdp://`.
 
-Pour travailler sur plusieurs machines, disposez deux sessions côte à côte ou empilées et enregistrez les hôtes d’un espace de travail. Les snippets regroupent vos commandes ; leur exécution demande confirmation. Les tunnels SSH proposent les redirections locales et distantes, avec écoute limitée à l’interface locale.
+Pour travailler sur plusieurs machines, disposez deux sessions côte à côte ou empilées et enregistrez les hôtes d’un espace de travail. Les snippets regroupent vos commandes ; leur exécution demande confirmation. Les tunnels SSH proposent les redirections locales et distantes. L'écoute locale est limitée à loopback ; pour un tunnel distant `-R`, l'adresse réellement écoutée dépend de la configuration du serveur SSH (`GatewayPorts`).
 
 <details>
 <summary><strong>Voir les interfaces SSH et RDP</strong></summary>

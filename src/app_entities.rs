@@ -268,6 +268,12 @@ impl NexusApp {
                             ui.add_space(8.0);
                             ui.label(RichText::new(rule.description()).monospace().color(BLUE));
                             muted(ui, status);
+                            if rule.kind == TunnelKind::Remote {
+                                ui.colored_label(
+                                    GOLD,
+                                    "Attention : le serveur SSH peut exposer ce port sur son réseau si GatewayPorts=yes. Vérifiez sa configuration avant de démarrer.",
+                                );
+                            }
                         });
                     ui.add_space(12.0);
                 });
@@ -519,7 +525,14 @@ impl NexusApp {
                 });
             }
             ui.add_space(15.0);
-            muted(ui, "Nexus Remote 0.3.0 · Rust natif · SSH / SFTP / RDP");
+            muted(
+                ui,
+                concat!(
+                    "Nexus Remote ",
+                    env!("CARGO_PKG_VERSION"),
+                    " · Rust natif · SSH / SFTP / RDP"
+                ),
+            );
         });
     }
     pub(super) fn entities_modals(&mut self, ctx: &egui::Context) {
@@ -823,15 +836,15 @@ impl NexusApp {
                 ui.selectable_value(&mut e.rule.kind, TunnelKind::Local, "Local · -L");
                 ui.selectable_value(&mut e.rule.kind, TunnelKind::Remote, "Distant · -R");
             });
-            muted(
-                ui,
-                if e.rule.kind == TunnelKind::Local {
-                    "Un port de ce PC sera relié à un service accessible depuis le serveur."
-                } else {
-                    "Un port du serveur sera relié à un service accessible depuis ce PC."
-                },
-            );
-            field(ui, "Adresse d’écoute (loopback)", &mut e.rule.local_host);
+            if e.rule.kind == TunnelKind::Local {
+                muted(ui, "Un port de ce PC sera relié à un service accessible depuis le serveur.");
+            } else {
+                ui.colored_label(
+                    GOLD,
+                    "Le serveur décide de l’adresse réellement écoutée. Avec GatewayPorts=yes, ce port peut être accessible sur son réseau. Vérifiez GatewayPorts=no ou clientspecified avant de démarrer.",
+                );
+            }
+            field(ui, "Adresse d’écoute demandée (loopback)", &mut e.rule.local_host);
             field(ui, "Port d’écoute", &mut e.local_port);
             field(ui, "Adresse de destination", &mut e.rule.destination_host);
             field(ui, "Port de destination", &mut e.destination_port);
