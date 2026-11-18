@@ -1,0 +1,30 @@
+[package]
+name = "nexus-remote"
+version = "0.3.3"
+edition = "2024"
+description = "Gestionnaire natif SSH, SFTP et RDP pour Windows"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+eframe = { version = "0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui = "0.33.3"
+ssh2 = { version = "0.9.7", features = ["vendored-openssl", "openssl-on-win32"] }
+vt100 = "0.15.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+base64 = "0.22"
+rfd = "0.15"
+zeroize = "1"
+raw-window-handle = "0.6"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Memory", "Win32_System_Com", "Win32_System_Ole", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls", "Win32_Graphics_Gdi", "Win32_System_Variant", "Win32_System_Com_StructuredStorage", "Win32_Storage_FileSystem"] }
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = "symbols"

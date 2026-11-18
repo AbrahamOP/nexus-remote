@@ -1,0 +1,101 @@
+# Guide détaillé — Nexus Remote
+
+Pour une présentation du produit et une prise en main rapide, consulter le [README](../README.md). Ce guide rassemble les détails de fonctionnement, de mise à jour et de validation.
+
+Un espace de travail natif en français pour SSH, SFTP et RDP. Cette version reprend les usages locaux de Termius : carnet d’hôtes, groupes, identités, snippets, tunnels et espaces de travail, avec RDP intégré.
+
+Le code applicatif et l’interface sont écrits en Rust (egui/eframe), sans Electron, WebView, JavaScript, C# ou .NET. libssh2, OpenSSL et zlib sont intégrés statiquement. Windows 10/11 x64 et un pilote OpenGL 3.3 sont nécessaires. L’exécutable n’est pas signé.
+
+## Démarrer et mettre à jour
+
+Extraire le ZIP, fermer l’ancienne version et ouvrir `NexusRemote.exe` sans argument pour retrouver le carnet personnel existant. Fermer l’application déconnecte ses vues SSH/RDP ; cela n’arrête pas les machines distantes. Les connexions actives et leurs onglets ne sont pas conservés par ce redémarrage : il faut les rouvrir depuis le carnet. Ajouter un hôte avec son protocole, son adresse, son port et son utilisateur.
+
+Le carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`. Les anciennes connexions sont conservées. Lors de la première mise à jour depuis la version 0.1, la première écriture garde une copie exacte de cet ancien fichier dans `connections.v0.1-backup.json`. Un fichier invalide est conservé ; une seule instance peut ouvrir le même carnet.
+
+## Correctif de saisie SSH 0.3.3
+
+Cette version corrige la reprise du clavier après un passage entre RDP et SSH. Lorsqu’une vue RDP est masquée, le clavier revient à Nexus seulement si l’application est au premier plan et si ce contrôle distant détenait le focus ; les autres contrôles et applications gardent leur focus.
+
+Sélectionner un onglet SSH permet de reprendre directement la saisie, sans clic supplémentaire dans le terminal. Si sa recherche est ouverte, le texte reste destiné au champ de recherche. Les menus, les fenêtres modales et les autres panneaux conservent leurs protections contre l’envoi involontaire de texte au shell.
+
+L’interface reste celle de la version 0.3.2. Le format du carnet, les profils et les identifiants enregistrés restent inchangés. Le redémarrage nécessaire pour charger le correctif déconnecte les sessions ouvertes ; il ne transfère pas leurs onglets ou leur shell vers la nouvelle version.
+
+## Vues de session 0.3.2
+
+Les sessions SSH et RDP disposent d’onglets plus compacts, avec l’icône du protocole et le bouton de fermeture réunis dans chaque onglet. Un seul bandeau par vue rassemble l’adresse, l’état de connexion et les commandes ; les panneaux partagés gardent chacun leur propre bandeau. Le menu **Session** donne accès aux espaces de travail, au partage de vue et, pour SSH, aux snippets et à la reconnexion.
+
+Dans le terminal SSH, la recherche reste à portée de clic. La copie, le zoom, les thèmes, l’export de l’écran et la déconnexion sont regroupés dans les commandes du terminal, avec une présentation adaptée à la largeur du panneau. La recherche apparaît seulement lorsqu’elle est ouverte ; les lignes permanentes d’aide et de statut ont été retirées du corps du terminal pour agrandir sa surface utile.
+
+Dans une vue RDP, les commandes d’ajustement et de plein écran sont complétées par un menu d’options pour la connexion, la déconnexion, le client Windows et les raccourcis. Les messages détaillés apparaissent quand ils sont utiles. La zone native reste contenue dans son panneau et se masque temporairement pendant l’ouverture d’un menu de Nexus, afin que le bureau distant ne recouvre pas ce menu.
+
+La refonte conserve l’authentification Windows, NLA et les avertissements de certificat. Elle ne permet pas, à elle seule, de conclure sur la cause d’un écran RDP noir ni de garantir sa résolution ; la connexion concernée doit être vérifiée séparément.
+
+## Interface et carnet d’hôtes
+
+La palette reprend la référence [GoaCloud UI, carte produit GC-CRD-01](https://design.goacloud.fr/#GC-CRD-01) : fond vert sombre, accent menthe et surfaces arrondies. La navigation, les formulaires et les panneaux des sessions utilisent cette même palette. Les polices Inter et JetBrains Mono sont embarquées : aucune récupération de police sur Internet n’est nécessaire.
+
+Les hôtes utilisent désormais des tuiles plus compactes : icône à gauche, nom et adresse rapprochés, compte visible et commandes en pied. Les boutons ordinaires mesurent 32 px, les badges de protocole 22 px. Les notes restent accessibles dans les détails et les infobulles. La barre de recherche, les filtres, le changement de vue et la grille partagent un budget de largeur qui conserve la marge droite lors d’un redimensionnement. Les alignements du pied de la barre latérale et de la barre d’état sont repris.
+
+Ces ajustements s’appuient aussi sur l’analyse des composants livrés dans une installation locale de Termius 10.4.0. Le contrôle automatique de sa fenêtre étant bloqué, il s’agit d’une analyse de ses ressources d’interface, pas d’une observation de l’écran actif. Le rapport fourni dans les archives Windows précise les mesures et leurs limites ; il n’est pas inclus dans ce dépôt. Aucun code, icône ou police propriétaire de Termius n’est réutilisé.
+
+Cette version conserve les fonctions des versions 0.2, 0.3 et 0.3.1 ainsi que le même format de carnet. Un dossier fourni avec `--data-dir CHEMIN` ouvre un carnet distinct réservé aux essais ; il ne sélectionne pas le carnet personnel habituel.
+
+## Fonctions
+
+- **Hôtes** : grille/liste, recherche, groupes, étiquettes, notes, favoris, récents et tri. Un clic affiche les détails, un double-clic connecte. Le menu contextuel des groupes permet de les configurer.
+- **Identités** : réutiliser un utilisateur et une méthode d’authentification dans plusieurs hôtes. Les secrets peuvent rester en mémoire ou être enregistrés avec le chiffrement Windows DPAPI. Les fichiers de clés privées restent à leur emplacement.
+- **Connexion rapide** : `Ctrl+K`, puis rechercher un hôte ou saisir `admin@serveur:2222`, `ssh://`, `sftp://` ou `rdp://`. Les mots de passe se saisissent séparément.
+- **SSH** : terminal interactif UTF-8/ANSI, couleurs, écran alternatif, historique, sélection, collage multiligne confirmé, recherche, zoom et thèmes Nexus/Dracula/Solarized. Export explicite de l’écran affiché.
+- **Vue partagée** : deux sessions côte à côte ou empilées. Les espaces de travail enregistrent une sélection d’hôtes à rouvrir ensemble, sur action explicite.
+- **Snippets** : enregistrer, copier et insérer des commandes. L’exécution montre la commande et les sessions SSH sélectionnées avant l’envoi avec Entrée, y compris sur plusieurs sessions.
+- **SFTP** : fichiers locaux/distants, filtres, fichiers masqués, navigation, envoi/téléchargement, progression et annulation. Création, renommage et suppression de fichiers ou dossiers vides. Éditeur UTF-8 jusqu’à 1 Mo avec sauvegarde confirmée, détection des modifications concurrentes et remplacement protégé.
+- **Tunnels SSH** : redirection locale `-L` et distante `-R`, démarrage/arrêt et état visible. Écoute loopback uniquement ; flux simultanés et tampons bornés.
+- **RDP** : contrôle Windows dans l’onglet, NLA/CredSSP, ajustement, plein écran et presse-papiers configurable. Windows conserve ses avertissements de certificat. Le client Windows séparé reste accessible sans mot de passe dans le fichier `.rdp`.
+
+## Données et sécurité
+
+Les métadonnées du carnet (adresses, noms, notes, commandes et chemins) restent en clair sur ce PC. Les secrets enregistrés sont chiffrés par DPAPI pour le compte Windows courant. Les exports de hôtes ne contiennent ni secret ni contenu de clé privée ; les identités sont matérialisées sans leur mot de passe.
+
+La première connexion SSH/SFTP présente l’empreinte SHA-256 avant authentification. Comparer cette empreinte avec celle du serveur avant acceptation. Une clé modifiée est refusée ; les clés connues se gèrent dans **Empreintes SSH**.
+
+L’import JSON et l’import de blocs explicites OpenSSH `Host` sont disponibles. L’import OpenSSH reprend HostName, User, Port et IdentityFile. Include et ProxyCommand ne sont pas exécutés ; une configuration SSH complète n’est pas reproduite.
+
+## Raccourcis
+
+`Ctrl+K` : connexion rapide ; `Ctrl+N` : nouvel hôte ; `Ctrl+F` : recherche du coffre ; `Ctrl+Maj+F` : recherche du terminal ; `Ctrl+Maj+C/V` : copier/coller du terminal ; `Maj+Page précédente/suivante` : historique ; `Ctrl+Alt+Fin` : sécurité Windows dans RDP.
+
+## Périmètre
+
+Nexus Remote n’est pas affilié à Termius. La synchronisation cloud, la collaboration d’équipe, Mosh/Telnet/série, FIDO2, les chaînes de rebond SSH, SOCKS dynamique, les transferts récursifs de dossiers et l’autocomplétion par IA ne sont pas implémentés.
+
+SSH, SFTP et tunnels sont testés avec un vrai serveur localhost et des clés Ed25519 éphémères. Le contrôle RDP natif est testé sans connexion ; une session distante complète reste à valider sur votre infrastructure. Voir le rapport de validation livré.
+
+## Compiler
+
+Prérequis sur Windows x64 :
+
+- Rust stable installé avec rustup pour `x86_64-pc-windows-msvc`.
+- Visual Studio 2022 Build Tools avec la charge **Développement Desktop en C++**, les outils MSVC x64 et le SDK Windows.
+- Perl dans `PATH` (par exemple Strawberry Perl), nécessaire à la compilation d’OpenSSL embarqué.
+
+Depuis le dossier du dépôt, ouvrir un **Developer PowerShell for VS 2022** configuré pour x64, puis lancer :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Test
+```
+
+Le script vérifie les outils déjà installés, compile la version release et exécute les tests avec `-Test`. Il n’installe ni ne met à jour Rust, Perl ou le SDK. Cargo récupère les dépendances de `Cargo.lock` au premier build ; `-Offline` permet de travailler sans réseau une fois leur cache rempli. Le runtime C est lié statiquement via `.cargo/config.toml`. Aucun dossier ni script extérieur au dépôt n’est nécessaire.
+
+Les commandes Cargo équivalentes, dans le même environnement de compilation, sont `cargo build --release --locked` puis `cargo test --release --locked`.
+
+Tests réseau facultatifs : Python 3.10+ avec `paramiko` et `cryptography` déjà installés, puis `powershell -ExecutionPolicy Bypass -File tests/run-loopback.ps1 -Python python`. Le script crée ses propres fichiers sous `test-work`, utilise uniquement localhost et arrête la fixture en fin de test.
+
+`--data-dir CHEMIN` sélectionne un carnet séparé pour les essais. L’exécutable compilé est `target\release\nexus-remote.exe`.
+
+Références : [concepts Termius](https://docs.termius.com/getting-started/what-is-termius), [espaces](https://docs.termius.com/terminal/workspaces), [SFTP](https://docs.termius.com/organize-and-connect-to-hosts/managing-files-with-sftp), [egui](https://github.com/emilk/egui), [ssh2-rs](https://docs.rs/ssh2/), [RDP Microsoft](https://learn.microsoft.com/en-us/windows/win32/termserv/msrdpclient9).
+
+Les licences sont incluses dans LICENSE, THIRD_PARTY_NOTICES.md, THIRD_PARTY_LICENSES.txt et RUST_LIBRARY_COPYRIGHT.html. Les polices Windows sont lues depuis le système lorsqu’elles sont présentes et ne sont pas redistribuées.
+
+## Licences
+
+Le code applicatif est sous licence MIT. Les notices et textes de licences des dépendances sont fournis dans `THIRD_PARTY_NOTICES.md`, `THIRD_PARTY_LICENSES.txt` et `RUST_LIBRARY_COPYRIGHT.html`. Inter et JetBrains Mono sont sous SIL Open Font License 1.1 ; leurs textes originaux figurent aussi dans le dossier `licenses` du paquet Windows et `assets/fonts` des sources. Les polices de repli Windows sont lues sur le système et ne sont pas redistribuées.
