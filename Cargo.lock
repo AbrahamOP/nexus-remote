@@ -1642,7 +1642,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-remote"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "base64",
  "eframe",

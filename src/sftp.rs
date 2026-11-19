@@ -117,6 +117,17 @@ struct RemoteEditor {
 }
 const MAX_EDITOR_BYTES: usize = 1024 * 1024;
 
+enum FileMenuAction {
+    OpenLocal(PathBuf),
+    OpenRemote(String),
+    Upload(PathBuf),
+    Download(Entry),
+    EditText(String),
+    Rename { path: String, name: String },
+    Delete { path: String, name: String },
+    CopyPath(String),
+}
+
 /// All remote I/O belongs to one worker, so the egui frame never waits on SSH.
 pub struct SftpSession {
     tx: Sender<Command>,
@@ -499,6 +510,11 @@ impl SftpSession {
             .map(|(i, _)| i)
             .collect();
         let height = (pane_height - (ui.cursor().top() - top) - 24.0).max(60.0);
+        let ready = self.connected
+            && !self.busy
+            && self.confirmation.is_none()
+            && self.name_dialog.is_none();
+        let mut menu_action = None;
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             egui::ScrollArea::vertical()
@@ -510,23 +526,59 @@ impl SftpSession {
                     for visible_row in rows {
                         let i = visible[visible_row];
                         let entry = &self.local_entries[i];
-                        let response = file_row(ui, entry, self.local_selected == Some(i));
-                        if response.clicked() {
-                            self.local_selected = Some(i);
-                        }
-                        if response.double_clicked()
-                            && !self.busy
-                            && self.confirmation.is_none()
-                            && self.name_dialog.is_none()
-                            && entry.directory
-                            && !entry.link
-                        {
-                            navigate = Some(PathBuf::from(&entry.path));
-                        }
-                        response.on_hover_text(&entry.path);
+                        ui.push_id(("local-entry", &entry.path), |ui| {
+                            let response = file_row(ui, entry, self.local_selected == Some(i));
+                            if response.clicked() || response.secondary_clicked() {
+                                self.local_selected = Some(i);
+                                ui.ctx().request_repaint();
+                            }
+                            if response.double_clicked() && ready && entry.directory && !entry.link
+                            {
+                                navigate = Some(PathBuf::from(&entry.path));
+                            }
+                            response.on_hover_text(&entry.path).context_menu(|ui| {
+                                ui.set_min_width(190.0);
+                                if entry.directory
+                                    && !entry.link
+                                    && ui
+                                        .add_enabled(ready, egui::Button::new("Ouvrir le dossier"))
+                                        .clicked()
+                                {
+                                    menu_action =
+                                        Some(FileMenuAction::OpenLocal(PathBuf::from(&entry.path)));
+                                    ui.close();
+                                }
+                                if entry.regular
+                                    && !entry.link
+                                    && ui
+                                        .add_enabled(
+                                            ready,
+                                            egui::Button::new("Envoyer vers le serveur"),
+                                        )
+                                        .clicked()
+                                {
+                                    menu_action =
+                                        Some(FileMenuAction::Upload(PathBuf::from(&entry.path)));
+                                    ui.close();
+                                }
+                                if ui.button("Copier le chemin").clicked() {
+                                    menu_action =
+                                        Some(FileMenuAction::CopyPath(entry.path.clone()));
+                                    ui.close();
+                                }
+                            });
+                        });
                     }
                 });
         });
+        if let Some(action) = menu_action {
+            match action {
+                FileMenuAction::OpenLocal(path) => navigate = Some(path),
+                FileMenuAction::Upload(source) => self.upload_file(source),
+                FileMenuAction::CopyPath(path) => ui.ctx().copy_text(path),
+                _ => unreachable!("local menu action"),
+            }
+        }
         ui.label(
             egui::RichText::new(format!("{} élément(s)", visible.len()))
                 .size(11.0)
@@ -577,6 +629,11 @@ impl SftpSession {
             .map(|(i, _)| i)
             .collect();
         let height = (pane_height - (ui.cursor().top() - top) - 24.0).max(60.0);
+        let ready = self.connected
+            && !self.busy
+            && self.confirmation.is_none()
+            && self.name_dialog.is_none();
+        let mut menu_action = None;
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             egui::ScrollArea::vertical()
@@ -588,31 +645,94 @@ impl SftpSession {
                     for visible_row in rows {
                         let i = visible[visible_row];
                         let entry = &self.remote_entries[i];
-                        let response = file_row(ui, entry, self.remote_selected == Some(i));
-                        if response.clicked() {
-                            self.remote_selected = Some(i);
-                        }
-                        if response.double_clicked()
-                            && !self.busy
-                            && self.confirmation.is_none()
-                            && self.name_dialog.is_none()
-                            && entry.directory
-                            && !entry.link
-                            && entry.actionable
-                        {
-                            navigate = Some(entry.path.clone());
-                        }
-                        response.on_hover_text(if entry.actionable {
-                            entry.path.clone()
-                        } else {
-                            format!(
-                                "{}\nNom non pris en charge pour les opérations sous Windows.",
-                                entry.path
-                            )
+                        ui.push_id(("remote-entry", &entry.path), |ui| {
+                            let response = file_row(ui, entry, self.remote_selected == Some(i));
+                            if response.clicked() || response.secondary_clicked() {
+                                self.remote_selected = Some(i);
+                                ui.ctx().request_repaint();
+                            }
+                            if response.double_clicked()
+                                && ready
+                                && entry.directory
+                                && !entry.link
+                                && entry.actionable
+                            {
+                                navigate = Some(entry.path.clone());
+                            }
+                            response.on_hover_text(if entry.actionable {
+                                entry.path.clone()
+                            } else {
+                                format!(
+                                    "{}\nNom non pris en charge pour les opérations sous Windows.",
+                                    entry.path
+                                )
+                            }).context_menu(|ui| {
+                                ui.set_min_width(190.0);
+                                if entry.directory
+                                    && !entry.link
+                                    && entry.actionable
+                                    && ui.add_enabled(ready, egui::Button::new("Ouvrir le dossier")).clicked()
+                                {
+                                    menu_action = Some(FileMenuAction::OpenRemote(entry.path.clone()));
+                                    ui.close();
+                                }
+                                if entry.regular && !entry.link && entry.actionable {
+                                    if ui.add_enabled(ready && valid_local_filename(&entry.name), egui::Button::new("Télécharger…")).clicked() {
+                                        menu_action = Some(FileMenuAction::Download(entry.clone()));
+                                        ui.close();
+                                    }
+                                    if ui.add_enabled(ready && entry.size <= MAX_EDITOR_BYTES as u64, egui::Button::new("Modifier le texte")).clicked() {
+                                        menu_action = Some(FileMenuAction::EditText(entry.path.clone()));
+                                        ui.close();
+                                    }
+                                }
+                                if entry.actionable {
+                                    ui.separator();
+                                    if ui.add_enabled(ready, egui::Button::new("Renommer…")).clicked() {
+                                        menu_action = Some(FileMenuAction::Rename { path: entry.path.clone(), name: entry.name.clone() });
+                                        ui.close();
+                                    }
+                                    if ui.add_enabled(ready, egui::Button::new("Supprimer…")).clicked() {
+                                        menu_action = Some(FileMenuAction::Delete { path: entry.path.clone(), name: entry.name.clone() });
+                                        ui.close();
+                                    }
+                                }
+                                ui.separator();
+                                if ui.button("Copier le chemin").clicked() {
+                                    menu_action = Some(FileMenuAction::CopyPath(entry.path.clone()));
+                                    ui.close();
+                                }
+                            });
                         });
                     }
                 });
         });
+        if let Some(action) = menu_action {
+            match action {
+                FileMenuAction::OpenRemote(path) => navigate = Some(path),
+                FileMenuAction::Download(entry) => self.download_file(entry),
+                FileMenuAction::EditText(source) => {
+                    self.send(Command::ReadText { source }, "Lecture du fichier texte…");
+                }
+                FileMenuAction::Rename { path, name } => {
+                    self.name_dialog = Some(NameDialog {
+                        action: NameAction::Rename(path),
+                        name,
+                        error: String::new(),
+                    });
+                }
+                FileMenuAction::Delete { path, name } => {
+                    self.confirmation = Some(Confirm {
+                        message: format!(
+                            "Supprimer définitivement « {name} » sur le serveur ?\n\nLes dossiers doivent être vides. Aucun effacement récursif."
+                        ),
+                        command: Command::Delete { source: path },
+                    });
+                }
+                FileMenuAction::CopyPath(path) => ui.ctx().copy_text(path),
+                _ => unreachable!("remote menu action"),
+            }
+        }
         ui.label(
             egui::RichText::new(format!("{} élément(s)", visible.len()))
                 .size(11.0)
@@ -636,15 +756,19 @@ impl SftpSession {
                 .pick_file()
         });
         if let Some(source) = source {
-            self.send(
-                Command::Upload {
-                    source,
-                    directory: self.remote_directory.clone(),
-                    replace: false,
-                },
-                "Préparation de l’envoi…",
-            );
+            self.upload_file(source);
         }
+    }
+
+    fn upload_file(&mut self, source: PathBuf) {
+        self.send(
+            Command::Upload {
+                source,
+                directory: self.remote_directory.clone(),
+                replace: false,
+            },
+            "Préparation de l’envoi…",
+        );
     }
 
     fn choose_download(&mut self) {
@@ -656,6 +780,10 @@ impl SftpSession {
             self.status = "Sélectionnez un fichier distant.".into();
             return;
         };
+        self.download_file(entry);
+    }
+
+    fn download_file(&mut self, entry: Entry) {
         if !entry.regular || entry.link || !entry.actionable {
             self.status = "Choisissez un fichier ordinaire avec un nom pris en charge. Les dossiers et liens ne sont pas transférés automatiquement.".into();
             return;
@@ -1891,6 +2019,203 @@ pub(crate) fn loopback_transfer_test(session: &ssh2::Session, local: &Path) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn menu_fixture() -> (SftpSession, Receiver<Command>) {
+        let (tx, commands) = mpsc::channel();
+        let (_events, rx) = mpsc::channel();
+        let session = SftpSession {
+            tx,
+            rx,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            stopped: Arc::new(AtomicBool::new(false)),
+            status: "SFTP connecté".into(),
+            connected: true,
+            busy: false,
+            local_directory: r"C:\fixture".into(),
+            local_input: r"C:\fixture".into(),
+            remote_directory: "/fixture".into(),
+            remote_input: "/fixture".into(),
+            local_entries: ["local-menu.txt", "other-local.txt"]
+                .into_iter()
+                .map(|name| Entry {
+                    name: name.into(),
+                    path: format!(r"C:\fixture\{name}"),
+                    directory: false,
+                    link: false,
+                    regular: true,
+                    actionable: true,
+                    size: 12,
+                })
+                .collect(),
+            remote_entries: ["remote-menu.txt", "other-remote.txt"]
+                .into_iter()
+                .map(|name| Entry {
+                    name: name.into(),
+                    path: format!("/fixture/{name}"),
+                    directory: false,
+                    link: false,
+                    regular: true,
+                    actionable: true,
+                    size: 12,
+                })
+                .collect(),
+            local_selected: None,
+            remote_selected: None,
+            progress: None,
+            confirmation: None,
+            name_dialog: None,
+            id: "sftp-menu-fixture".into(),
+            filter: String::new(),
+            show_hidden: true,
+            editor: None,
+        };
+        (session, commands)
+    }
+
+    fn menu_frame(
+        session: &mut SftpSession,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1200.0, 800.0),
+                )),
+                focused: true,
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| session.ui(ui));
+            },
+        )
+    }
+
+    fn text_position(shape: &egui::epaint::Shape, label: &str) -> Option<egui::Pos2> {
+        match shape {
+            egui::epaint::Shape::Text(text) if text.galley.job.text == label => {
+                Some(text.pos + egui::vec2(8.0, text.galley.size().y * 0.5))
+            }
+            egui::epaint::Shape::Vec(shapes) => {
+                shapes.iter().find_map(|shape| text_position(shape, label))
+            }
+            _ => None,
+        }
+    }
+
+    fn has_text(shape: &egui::epaint::Shape, label: &str) -> bool {
+        match shape {
+            egui::epaint::Shape::Text(text) => text.galley.job.text.contains(label),
+            egui::epaint::Shape::Vec(shapes) => shapes.iter().any(|shape| has_text(shape, label)),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn right_click_opens_the_target_file_menu_without_starting_a_transfer() {
+        for (target, menu_label, remote) in [
+            ("local-menu.txt", "Envoyer vers le serveur", false),
+            ("remote-menu.txt", "Télécharger", true),
+        ] {
+            let (mut session, commands) = menu_fixture();
+            let ctx = egui::Context::default();
+            let mut output = menu_frame(&mut session, &ctx, Vec::new());
+            for _ in 0..2 {
+                output = menu_frame(&mut session, &ctx, Vec::new());
+            }
+            let position = output
+                .shapes
+                .iter()
+                .find_map(|clipped| text_position(&clipped.shape, target))
+                .expect("fixture file row must be visible");
+            for pressed in [true, false] {
+                let _ = menu_frame(
+                    &mut session,
+                    &ctx,
+                    vec![
+                        egui::Event::PointerMoved(position),
+                        egui::Event::PointerButton {
+                            pos: position,
+                            button: egui::PointerButton::Secondary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            output = menu_frame(
+                &mut session,
+                &ctx,
+                vec![egui::Event::PointerMoved(position)],
+            );
+            assert!(
+                egui::Popup::is_any_open(&ctx),
+                "menu did not open for {target}"
+            );
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|clipped| has_text(&clipped.shape, menu_label)),
+                "expected {menu_label} in the menu for {target}"
+            );
+            assert_eq!(session.local_selected, (!remote).then_some(0));
+            assert_eq!(session.remote_selected, remote.then_some(0));
+            assert!(!session.busy, "right click must not start a transfer");
+
+            // The menu must act on the clicked row even if a selection changes
+            // while the popup is open.
+            let action_label = if remote {
+                "Supprimer…"
+            } else {
+                "Envoyer vers le serveur"
+            };
+            let action_position = output
+                .shapes
+                .iter()
+                .find_map(|clipped| text_position(&clipped.shape, action_label))
+                .expect("menu action must be visible");
+            if remote {
+                session.remote_selected = Some(1);
+            } else {
+                session.local_selected = Some(1);
+            }
+            for pressed in [true, false] {
+                let _ = menu_frame(
+                    &mut session,
+                    &ctx,
+                    vec![
+                        egui::Event::PointerMoved(action_position),
+                        egui::Event::PointerButton {
+                            pos: action_position,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            if remote {
+                let confirm = session
+                    .confirmation
+                    .as_ref()
+                    .expect("delete needs confirmation");
+                assert!(
+                    matches!(&confirm.command, Command::Delete { source } if source == "/fixture/remote-menu.txt")
+                );
+                assert!(
+                    commands.try_recv().is_err(),
+                    "delete must not run before confirmation"
+                );
+            } else {
+                assert!(
+                    matches!(commands.try_recv(), Ok(Command::Upload { source, .. }) if source == PathBuf::from(r"C:\fixture\local-menu.txt"))
+                );
+            }
+        }
+    }
 
     fn sandbox() -> PathBuf {
         let root = std::env::current_dir()

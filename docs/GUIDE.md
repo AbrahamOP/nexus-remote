@@ -12,6 +12,10 @@ Extraire le ZIP, fermer l’ancienne version et ouvrir `NexusRemote.exe` sans ar
 
 Le carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`. Les anciennes connexions sont conservées. Lors de la première mise à jour depuis la version 0.1, la première écriture garde une copie exacte de cet ancien fichier dans `connections.v0.1-backup.json`. Un fichier invalide est conservé ; une seule instance peut ouvrir le même carnet.
 
+## Menu contextuel SFTP 0.3.6
+
+Un clic droit sur une ligne de la vue SFTP sélectionne l’élément visé et affiche les actions adaptées au panneau local ou distant. Les commandes du menu utilisent les mêmes contrôles que les boutons de la vue : seuls les fichiers ordinaires sont transférés, les liens symboliques ne sont pas transférés, l’édition distante reste limitée à 1 Mo et la suppression distante demande une confirmation. Aucun dossier n’est transféré de manière récursive ; aucun fichier local n’est supprimé par ce menu.
+
 ## Vérification du certificat RDP et tunnels distants 0.3.5
 
 Pour les connexions RDP intégrées et celles ouvertes avec le client Windows, Nexus exige par défaut que Windows authentifie le serveur. Un ancien profil sans réglage de certificat suit aussi cette règle. Dans les paramètres avancés de chaque hôte RDP, **Autoriser un certificat RDP non vérifié** permet explicitement de poursuivre après un avertissement Windows. Cette exception concerne seulement cet hôte ; elle ne vaut pas approbation du certificat. Si la connexion échoue avec la règle stricte, vérifier le certificat et le nom du serveur avant d’envisager l’exception. Ne saisir aucun identifiant dans une session dont l’identité reste douteuse.
@@ -54,7 +58,7 @@ Cette version conserve les fonctions des versions 0.2, 0.3 et 0.3.1 ainsi que le
 - **SSH** : terminal interactif UTF-8/ANSI, couleurs, écran alternatif, historique, sélection, collage multiligne confirmé, recherche, zoom et thèmes Nexus/Dracula/Solarized. Export explicite de l’écran affiché.
 - **Vue partagée** : deux sessions côte à côte ou empilées. Les espaces de travail enregistrent une sélection d’hôtes à rouvrir ensemble, sur action explicite.
 - **Snippets** : enregistrer, copier et insérer des commandes. L’exécution montre la commande et les sessions SSH sélectionnées avant l’envoi avec Entrée, y compris sur plusieurs sessions.
-- **SFTP** : fichiers locaux/distants, filtres, fichiers masqués, navigation, envoi/téléchargement, progression et annulation. Création, renommage et suppression de fichiers ou dossiers vides. Éditeur UTF-8 jusqu’à 1 Mo avec sauvegarde confirmée, détection des modifications concurrentes et remplacement protégé.
+- **SFTP** : fichiers locaux/distants, filtres, fichiers masqués, navigation, menu au clic droit selon l’élément, envoi/téléchargement, progression et annulation. Création de dossiers distants, renommage et suppression de fichiers distants ou de dossiers distants vides. Éditeur UTF-8 jusqu’à 1 Mo avec sauvegarde confirmée, détection des modifications concurrentes et remplacement protégé.
 - **Tunnels SSH** : redirection locale `-L` avec écoute loopback, et redirection distante `-R` avec confirmation à chaque démarrage. Pour `-R`, Nexus demande loopback mais le serveur contrôle l’adresse réellement écoutée : `GatewayPorts yes` peut exposer le port au réseau. Vérifier `GatewayPorts no` ou `clientspecified` sur le serveur avant de démarrer. Flux simultanés et tampons bornés.
 - **RDP** : contrôle Windows dans l’onglet, NLA/CredSSP, ajustement, plein écran et presse-papiers configurable. Authentification du certificat obligatoire par défaut, avec exception avancée par hôte permettant de poursuivre après un avertissement Windows. Le client Windows séparé reste accessible sans mot de passe dans le fichier `.rdp`.
 

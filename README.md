@@ -13,7 +13,7 @@ Nexus Remote est un gestionnaire de connexions **SSH, SFTP et RDP pour Windows**
 | Protocole | Ce que vous pouvez faire |
 | --- | --- |
 | **SSH** | Utiliser un terminal interactif avec couleurs, historique, sélection, recherche, zoom et thèmes. |
-| **SFTP** | Parcourir les fichiers locaux et distants, transférer des fichiers et modifier les petits fichiers texte. |
+| **SFTP** | Parcourir les fichiers locaux et distants, transférer des fichiers et modifier les petits fichiers texte. Le clic droit ouvre les actions adaptées à chaque élément. |
 | **RDP** | Afficher un bureau Windows dans un onglet, ajuster la vue ou passer en plein écran. |
 
 Le carnet réunit groupes, étiquettes, notes, favoris et connexions récentes. Les identités permettent de réutiliser un utilisateur et son authentification entre plusieurs hôtes. La connexion rapide ouvre un accès depuis une recherche, une adresse ou une URI `ssh://`, `sftp://` ou `rdp://`.
@@ -46,6 +46,8 @@ L’application est portable et l’exécutable n’est pas signé. Son interfac
 3. Enregistrer l’hôte et le double-cliquer pour ouvrir une session.
 
 Pour SSH et SFTP, comparez l’empreinte du serveur à la première connexion avant de l’accepter. Une clé de serveur différente de celle enregistrée est refusée. Pour RDP, Windows doit authentifier le serveur pour poursuivre la connexion. Si votre serveur présente un certificat non vérifiable, l’option avancée **Autoriser un certificat RDP non vérifié** existe pour cet hôte seulement : elle permet de poursuivre après l’avertissement Windows. Vérifiez alors l’identité du serveur par un autre canal avant de saisir vos identifiants. Cette option est désactivée par défaut, y compris pour les anciens profils.
+
+Dans la vue SFTP, faites un **clic droit** sur un fichier ou dossier pour retrouver les opérations disponibles. Les transferts concernent les fichiers ordinaires ; la suppression distante demande toujours une confirmation. Le menu ne propose pas de suppression locale.
 
 **Raccourcis utiles :** `Ctrl+K` pour la connexion rapide, `Ctrl+N` pour un nouvel hôte, `Ctrl+Maj+F` pour rechercher dans le terminal et `Ctrl+Maj+C/V` pour copier ou coller.
 
