@@ -83,11 +83,13 @@ fn render_sessions(
                     .frame(Frame::new().fill(BG).inner_margin(14))
                     .show(ctx, |ui| {
                         let available = ui.available_rect_before_wrap();
-                        app.session_area(ui, ctx);
+                        let enabled = !app.has_modal();
+                        ui.add_enabled_ui(enabled, |ui| app.session_area(ui, ctx));
                         (available, ui.min_rect())
                     })
                     .inner,
             );
+            app.tab_rename_modal(ctx);
         },
     );
     let (available, used) = bounds.expect("The session panel must be rendered");
@@ -221,4 +223,159 @@ fn selecting_an_existing_session_tab_does_not_reconnect_or_save_it() {
         "Tab selection must reuse the existing session"
     );
     assert_session_bounds(&app, available, used, 1320.0);
+}
+
+#[test]
+fn hidden_ssh_tabs_continue_draining_output_without_being_rendered() {
+    let mut app = offline_sessions();
+    let hidden = match &mut app.tabs[1].view {
+        SessionView::Ssh(terminal) => terminal,
+        _ => panic!("Expected hidden SSH tab"),
+    };
+    hidden.inject_offline_output(b"hidden-tmux-output");
+    assert!(!hidden.screen_text().contains("hidden-tmux-output"));
+    app.poll_hidden_ssh_sessions();
+    let hidden = match &app.tabs[1].view {
+        SessionView::Ssh(terminal) => terminal,
+        _ => unreachable!(),
+    };
+    assert!(hidden.screen_text().contains("hidden-tmux-output"));
+
+    app.set_page(Page::Hosts);
+    if let SessionView::Ssh(terminal) = &mut app.tabs[0].view {
+        terminal.inject_offline_output(b"vault-tmux-output");
+    }
+    app.poll_hidden_ssh_sessions();
+    if let SessionView::Ssh(terminal) = &app.tabs[0].view {
+        assert!(terminal.screen_text().contains("vault-tmux-output"));
+    }
+    assert_eq!(app.active, Some(0));
+}
+
+#[test]
+fn split_survives_click_on_right_tab_and_visit_to_vault() {
+    let mut app = offline_sessions();
+    app.secondary = Some(1);
+    let ctx = egui::Context::default();
+    design::apply_theme(&ctx);
+    let mut output = render_sessions(&mut app, &ctx, 1320.0, Vec::new()).0;
+    for _ in 0..2 {
+        output = render_sessions(&mut app, &ctx, 1320.0, Vec::new()).0;
+    }
+    let mut titles = Vec::new();
+    for shape in &output.shapes {
+        find_tab_title(&shape.shape, "Session B", &mut titles);
+    }
+    let position = titles.first().expect("Right tab must be visible").center();
+    for pressed in [true, false] {
+        let _ = render_sessions(
+            &mut app,
+            &ctx,
+            1320.0,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert_eq!((app.active, app.secondary), (Some(0), Some(1)));
+    app.set_page(Page::Hosts);
+    assert_eq!((app.active, app.secondary), (Some(0), Some(1)));
+    app.set_page(Page::Session);
+    let (_, available, used) = render_sessions(&mut app, &ctx, 1040.0, Vec::new());
+    assert_session_bounds(&app, available, used, 1040.0);
+}
+
+#[test]
+fn closing_left_session_keeps_two_distinct_split_panes() {
+    let mut app = offline_sessions();
+    app.secondary = Some(1);
+    app.close_tab(0);
+    assert_eq!(app.tabs.len(), 2);
+    assert_eq!(app.secondary, Some(0));
+    assert_eq!(app.active, Some(1));
+
+    app.close_tab(1);
+    assert_eq!(app.tabs.len(), 1);
+    assert_eq!(app.active, Some(0));
+    assert_eq!(app.secondary, None);
+}
+
+#[test]
+fn split_button_is_visible_and_opens_a_session_chooser() {
+    let mut app = offline_sessions();
+    let ctx = egui::Context::default();
+    design::apply_theme(&ctx);
+    let mut output = render_sessions(&mut app, &ctx, 1320.0, Vec::new()).0;
+    for _ in 0..2 {
+        output = render_sessions(&mut app, &ctx, 1320.0, Vec::new()).0;
+    }
+    let mut labels = Vec::new();
+    for shape in &output.shapes {
+        find_tab_title(&shape.shape, "Côte à côte", &mut labels);
+    }
+    let position = labels
+        .first()
+        .expect("The split button must be visible beside the tabs")
+        .center();
+    for pressed in [true, false] {
+        let _ = render_sessions(
+            &mut app,
+            &ctx,
+            1320.0,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert!(egui::Popup::is_any_open(&ctx));
+    assert_eq!((app.active, app.secondary), (Some(0), None));
+    assert!(app.launch_queue.is_empty());
+}
+
+#[test]
+fn tab_rename_changes_only_the_session_label_and_reconnect_carries_it() {
+    let mut app = offline_sessions();
+    let ctx = egui::Context::default();
+    design::apply_theme(&ctx);
+    let id = app.tabs[0].id.clone();
+    let original_host_name = app.tabs[0].profile.name.clone();
+    app.begin_tab_rename(&id);
+    assert!(app.has_modal(), "Rename must block terminal input");
+    app.tab_rename.as_mut().unwrap().title = "tmux · projet".into();
+    for _ in 0..2 {
+        let _ = render_sessions(&mut app, &ctx, 1320.0, Vec::new());
+    }
+    let enter = egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let _ = render_sessions(&mut app, &ctx, 1320.0, vec![enter]);
+    assert!(app.tab_rename.is_none());
+    assert_eq!(app.tabs[0].title, "tmux · projet");
+    assert_eq!(app.tabs[0].profile.name, original_host_name);
+    assert_eq!(app.store.state.profiles[0].name, original_host_name);
+    assert!(!app.store.data_dir.exists());
+
+    app.finish_tab_close(&id, true, &ctx);
+    assert_eq!(app.tabs.len(), 2);
+    assert!(matches!(
+        app.launch_queue.front(),
+        Some((_, LaunchTarget::Session { title: Some(title) })) if title == "tmux · projet"
+    ));
+    assert!(!app.store.data_dir.exists());
 }

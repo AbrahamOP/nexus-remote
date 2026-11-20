@@ -12,13 +12,13 @@ Nexus Remote est un gestionnaire de connexions **SSH, SFTP et RDP pour Windows**
 
 | Protocole | Ce que vous pouvez faire |
 | --- | --- |
-| **SSH** | Utiliser un terminal interactif avec couleurs, historique, sélection, recherche, zoom et thèmes. |
+| **SSH** | Utiliser plusieurs terminaux interactifs, avec couleurs, historique, recherche, zoom et thèmes. Les onglets peuvent être renommés et affichés côte à côte. |
 | **SFTP** | Parcourir les fichiers locaux et distants, transférer des fichiers et modifier les petits fichiers texte. Le clic droit ouvre les actions adaptées à chaque élément. |
 | **RDP** | Afficher un bureau Windows dans un onglet, ajuster la vue ou passer en plein écran. |
 
 Le carnet réunit groupes, étiquettes, notes, favoris et connexions récentes. Les identités permettent de réutiliser un utilisateur et son authentification entre plusieurs hôtes. La connexion rapide ouvre un accès depuis une recherche, une adresse ou une URI `ssh://`, `sftp://` ou `rdp://`.
 
-Pour travailler sur plusieurs machines, disposez deux sessions côte à côte ou empilées et enregistrez les hôtes d’un espace de travail. Les snippets regroupent vos commandes ; leur exécution demande confirmation. Les tunnels SSH proposent les redirections locales et distantes. L’écoute locale est limitée à loopback. Chaque démarrage d’un tunnel distant `-R` demande une confirmation : l’adresse réellement écoutée dépend de la configuration du serveur SSH (`GatewayPorts`).
+Pour travailler dans plusieurs shells, cliquez sur **Côte à côte** au-dessus des sessions et choisissez l’onglet à afficher à droite. Double-cliquez sur un onglet, ou faites un clic droit puis **Renommer l’onglet…**, pour lui donner un nom propre à cette session sans modifier l’hôte enregistré. Les sorties des connexions SSH masquées continuent d’être traitées, ce qui évite qu’un tmux actif bloque simplement parce que son onglet n’est pas visible. Les espaces de travail enregistrent les hôtes à rouvrir ; les snippets regroupent vos commandes et leur exécution demande confirmation. Les tunnels SSH proposent les redirections locales et distantes. L’écoute locale est limitée à loopback. Chaque démarrage d’un tunnel distant `-R` demande une confirmation : l’adresse réellement écoutée dépend de la configuration du serveur SSH (`GatewayPorts`).
 
 <details>
 <summary><strong>Voir les interfaces SSH et RDP</strong></summary>

@@ -167,7 +167,7 @@ impl NexusApp {
             );
         }
         egui::ScrollArea::vertical().show(ui,|ui|{for snippet in self.store.state.snippets.clone(){ui.push_id(&snippet.id,|ui|{Frame::new().fill(CARD).corner_radius(16).inner_margin(24).show(ui,|ui|{ui.set_width(ui.available_width());ui.horizontal(|ui|{icon(ui,Icon::Code,BLUE,26.0);ui.label(RichText::new(&snippet.name).size(16.0).strong());badge(ui,&snippet.group,MUTED);ui.with_layout(egui::Layout::right_to_left(Align::Center),|ui|{if ui.small_button("Supprimer").clicked(){self.entity_delete=Some(EntityDelete::Snippet(snippet.id.clone()));}if ui.small_button("Modifier").clicked(){self.snippet_editor=Some(SnippetEditor{snippet:snippet.clone(),error:String::new()});}});});ui.add_space(8.0);Frame::new().fill(TOP).corner_radius(6).inner_margin(12).show(ui,|ui|{ui.add(egui::Label::new(RichText::new(&snippet.command).monospace().color(GREEN)).wrap());});ui.add_space(9.0);
-            ui.horizontal(|ui|{if ui.button("Copier").clicked(){ctx.copy_text(snippet.command.clone());}ui.menu_button("Insérer dans…",|ui|{let sessions:Vec<_>=self.tabs.iter().enumerate().filter(|(_,t)|matches!(&t.view,SessionView::Ssh(s)if s.connected())).map(|(i,t)|(i,t.title.clone())).collect();if sessions.is_empty(){muted(ui,"Ouvrez d’abord une session SSH.");}for(index,title)in sessions{if ui.button(title).clicked(){if let SessionView::Ssh(s)=&mut self.tabs[index].view{s.insert_text(&snippet.command);}self.active=Some(index);self.secondary=None;self.page=Page::Session;ui.close();}}});if ui.button("Exécuter…").clicked(){let targets=self.active.filter(|i|matches!(self.tabs.get(*i).map(|t|&t.view),Some(SessionView::Ssh(s))if s.connected())).and_then(|i|self.tabs.get(i).map(|t|t.id.clone())).into_iter().collect();self.command_run=Some(CommandRun{command:snippet.command.clone(),targets});}});
+            ui.horizontal(|ui|{if ui.button("Copier").clicked(){ctx.copy_text(snippet.command.clone());}ui.menu_button("Insérer dans…",|ui|{let sessions:Vec<_>=self.tabs.iter().enumerate().filter(|(_,t)|matches!(&t.view,SessionView::Ssh(s)if s.connected())).map(|(i,t)|(i,t.title.clone())).collect();if sessions.is_empty(){muted(ui,"Ouvrez d’abord une session SSH.");}for(index,title)in sessions{if ui.button(title).clicked(){if let SessionView::Ssh(s)=&mut self.tabs[index].view{s.insert_text(&snippet.command);}self.activate_tab(index);ui.close();}}});if ui.button("Exécuter…").clicked(){let targets=self.active.filter(|i|matches!(self.tabs.get(*i).map(|t|&t.view),Some(SessionView::Ssh(s))if s.connected())).and_then(|i|self.tabs.get(i).map(|t|t.id.clone())).into_iter().collect();self.command_run=Some(CommandRun{command:snippet.command.clone(),targets});}});
         });ui.add_space(12.0);});}});
     }
     pub(super) fn tunnels_page(&mut self, ui: &mut egui::Ui) {
@@ -1176,8 +1176,7 @@ impl NexusApp {
                 }
             }
             if let Some(index) = activated {
-                self.active = Some(index);
-                self.page = Page::Session;
+                self.activate_tab(index);
             }
         } else if !close {
             self.command_run = Some(run);
@@ -1213,9 +1212,7 @@ impl NexusApp {
                 PendingClose::App=>self.tabs.iter().position(|tab|matches!(&tab.view,SessionView::Sftp(session)if session.has_unsaved_changes())),
             };
             if let Some(index) = index {
-                self.active = Some(index);
-                self.secondary = None;
-                self.page = Page::Session;
+                self.activate_tab(index);
             }
         } else if confirmed {
             match pending {

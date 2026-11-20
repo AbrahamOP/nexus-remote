@@ -109,8 +109,14 @@ struct Editor {
 }
 #[derive(Clone)]
 enum LaunchTarget {
-    Session,
+    Session { title: Option<String> },
     Tunnel { rule: TunnelRule, confirmed: bool },
+}
+struct TabRename {
+    id: String,
+    title: String,
+    error: String,
+    first_focus: bool,
 }
 struct AuthPrompt {
     profile: Profile,
@@ -186,6 +192,8 @@ pub struct NexusApp {
     entity_delete: Option<EntityDelete>,
     command_run: Option<CommandRun>,
     pending_close: Option<PendingClose>,
+    tab_rename: Option<TabRename>,
+    last_clicked_tab: Option<String>,
     app_quit_confirmed: bool,
     tabs: Vec<SessionTab>,
     active: Option<usize>,
@@ -258,6 +266,8 @@ impl NexusApp {
             entity_delete: None,
             command_run: None,
             pending_close: None,
+            tab_rename: None,
+            last_clicked_tab: None,
             app_quit_confirmed: false,
             tabs: Vec::new(),
             active: None,
@@ -310,10 +320,6 @@ impl NexusApp {
     }
     fn set_page(&mut self, page: Page) {
         self.page = page;
-        if page != Page::Session {
-            self.active = None;
-            self.secondary = None;
-        }
         self.search.clear();
     }
     fn has_modal(&self) -> bool {
@@ -332,11 +338,23 @@ impl NexusApp {
             || self.entity_delete.is_some()
             || self.command_run.is_some()
             || self.pending_close.is_some()
+            || self.tab_rename.is_some()
             || self.palette
             || !self.trust_queue.is_empty()
     }
     fn pane_modal(&self) -> bool {
         self.tabs.iter().any(SessionTab::has_modal)
+    }
+    fn poll_hidden_ssh_sessions(&mut self) {
+        for (index, tab) in self.tabs.iter_mut().enumerate() {
+            let rendered = self.page == Page::Session
+                && (self.active == Some(index) || self.secondary == Some(index));
+            if !rendered {
+                if let SessionView::Ssh(session) = &mut tab.view {
+                    session.poll_updates();
+                }
+            }
+        }
     }
     fn new_profile(&mut self, protocol: Protocol) {
         let mut p = Profile {
@@ -395,11 +413,20 @@ impl NexusApp {
             is_edit: true,
         });
     }
-    fn connect(&mut self, mut p: Profile, protocol: Option<Protocol>, _ctx: &egui::Context) {
+    fn connect(&mut self, p: Profile, protocol: Option<Protocol>, _ctx: &egui::Context) {
+        self.connect_with_title(p, protocol, None);
+    }
+    fn connect_with_title(
+        &mut self,
+        mut p: Profile,
+        protocol: Option<Protocol>,
+        title: Option<String>,
+    ) {
         if let Some(protocol) = protocol {
             p.protocol = protocol;
         }
-        self.launch_queue.push_back((p, LaunchTarget::Session));
+        self.launch_queue
+            .push_back((p, LaunchTarget::Session { title }));
     }
     fn pump_launch(&mut self, ctx: &egui::Context) {
         if self.has_modal() || self.pane_modal() {
@@ -467,7 +494,7 @@ impl NexusApp {
         ctx: &egui::Context,
     ) {
         match target {
-            LaunchTarget::Session => self.start_session(p, secret, ctx),
+            LaunchTarget::Session { title } => self.start_session(p, secret, title, ctx),
             LaunchTarget::Tunnel { rule, confirmed } => {
                 if rule.kind == TunnelKind::Remote && !confirmed {
                     self.error =
@@ -485,7 +512,13 @@ impl NexusApp {
             }
         }
     }
-    fn start_session(&mut self, profile: Profile, secret: String, ctx: &egui::Context) {
+    fn start_session(
+        &mut self,
+        profile: Profile,
+        secret: String,
+        title: Option<String>,
+        ctx: &egui::Context,
+    ) {
         let view = match profile.protocol {
             Protocol::Ssh => {
                 let mut s =
@@ -527,13 +560,12 @@ impl NexusApp {
         }
         self.tabs.push(SessionTab {
             id: uuid::Uuid::new_v4().to_string(),
-            title: profile.name.clone(),
+            title: title.unwrap_or_else(|| profile.name.clone()),
             profile: original,
             protocol: profile.protocol,
             view,
         });
         self.active = Some(self.tabs.len() - 1);
-        self.secondary = None;
         self.page = Page::Session;
     }
     fn has_unsaved_changes(&self) -> bool {
@@ -554,15 +586,16 @@ impl NexusApp {
         }
     }
 
-    fn finish_tab_close(&mut self, id: &str, reconnect: bool, ctx: &egui::Context) {
+    fn finish_tab_close(&mut self, id: &str, reconnect: bool, _ctx: &egui::Context) {
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
         };
         let profile = self.tabs[index].profile.clone();
         let protocol = self.tabs[index].protocol;
+        let title = self.tabs[index].title.clone();
         self.close_tab(index);
         if reconnect {
-            self.connect(profile, Some(protocol), ctx);
+            self.connect_with_title(profile, Some(protocol), Some(title));
         }
     }
 
@@ -587,9 +620,87 @@ impl NexusApp {
             Some(i) if i > index => Some(i - 1),
             v => v,
         };
+        if self.active == self.secondary {
+            if let Some(right) = self.secondary {
+                self.active = (0..self.tabs.len()).find(|candidate| *candidate != right);
+                if self.active.is_none() {
+                    self.active = Some(right);
+                    self.secondary = None;
+                }
+            }
+        }
         if self.active.is_none() {
             self.page = Page::Hosts;
         }
+    }
+    fn activate_tab(&mut self, index: usize) {
+        let Some(tab) = self.tabs.get_mut(index) else {
+            return;
+        };
+        if self.secondary != Some(index) {
+            self.active = Some(index);
+        }
+        self.page = Page::Session;
+        if let SessionView::Ssh(session) = &mut tab.view {
+            session.request_input_focus();
+        }
+    }
+    fn begin_tab_rename(&mut self, id: &str) {
+        if let Some(tab) = self.tabs.iter().find(|tab| tab.id == id) {
+            self.tab_rename = Some(TabRename {
+                id: id.to_owned(),
+                title: tab.title.clone(),
+                error: String::new(),
+                first_focus: true,
+            });
+        }
+    }
+    fn tab_rename_modal(&mut self, ctx: &egui::Context) {
+        let Some(mut rename) = self.tab_rename.take() else {
+            return;
+        };
+        let mut save = false;
+        let mut cancel = false;
+        egui::Modal::new(egui::Id::new("rename_session_tab")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.heading("Renommer l’onglet");
+            ui.label("Ce nom appartient à la session ; l’hôte enregistré garde son nom.");
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut rename.title)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("Nom de l’onglet"),
+            );
+            if rename.first_focus {
+                response.request_focus();
+                rename.first_focus = false;
+            }
+            if !rename.error.is_empty() {
+                ui.colored_label(DANGER, &rename.error);
+            }
+            ui.horizontal(|ui| {
+                cancel = ui.button("Annuler").clicked();
+                save = primary(ui, "Enregistrer").clicked();
+            });
+            save |= ui.input(|input| input.key_pressed(egui::Key::Enter));
+            cancel |= ui.input(|input| input.key_pressed(egui::Key::Escape));
+        });
+        if cancel {
+            return;
+        }
+        if save {
+            let title = rename.title.trim();
+            if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control)
+            {
+                rename.error =
+                    "Saisissez un nom de 1 à 80 caractères, sans caractère de contrôle.".into();
+            } else if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == rename.id) {
+                tab.title = title.to_owned();
+                return;
+            } else {
+                return;
+            }
+        }
+        self.tab_rename = Some(rename);
     }
     fn header(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("main_header")
@@ -1514,13 +1625,30 @@ impl NexusApp {
                     egui::pos2(available.right() - 32.0, available.top() + 2.0),
                     Vec2::splat(32.0),
                 );
+                let split_width = if self.tabs.len() >= 2 { 116.0 } else { 0.0 };
+                let split_rect = egui::Rect::from_min_size(
+                    egui::pos2(add_rect.left() - 8.0 - split_width, available.top() + 2.0),
+                    Vec2::new(split_width, 32.0),
+                );
                 let tabs_rect = egui::Rect::from_min_max(
                     available.min,
-                    egui::pos2(add_rect.left() - 8.0, available.bottom()),
+                    egui::pos2(
+                        if split_width > 0.0 {
+                            split_rect.left() - 8.0
+                        } else {
+                            add_rect.left() - 8.0
+                        },
+                        available.bottom(),
+                    ),
                 );
                 let mut close = None;
                 let mut reconnect = None;
                 let mut activate = None;
+                let mut rename = None;
+                let mut clicked_tab = None;
+                let mut show_left = None;
+                let mut show_right = None;
+                let mut unsplit = false;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(tabs_rect), |ui| {
                     egui::ScrollArea::horizontal()
                         .id_salt("session_tab_strip")
@@ -1531,8 +1659,10 @@ impl NexusApp {
                                 ui.spacing_mut().item_spacing.x = 6.0;
                                 for (index, tab) in self.tabs.iter().enumerate() {
                                     ui.push_id(&tab.id, |ui| {
+                                        let primary_tab = self.active == Some(index);
+                                        let right_tab = self.secondary == Some(index);
                                         let selected = self.page == Page::Session
-                                            && self.active == Some(index);
+                                            && (primary_tab || right_tab);
                                         let title_width = ui
                                             .painter()
                                             .layout_no_wrap(
@@ -1560,7 +1690,11 @@ impl NexusApp {
                                                 rect,
                                                 8.0,
                                                 if selected {
-                                                    tint(GREEN, CARD, 0.10)
+                                                    tint(
+                                                        if right_tab { BLUE } else { GREEN },
+                                                        CARD,
+                                                        0.10,
+                                                    )
                                                 } else {
                                                     CARD
                                                 },
@@ -1572,7 +1706,10 @@ impl NexusApp {
                                                     rect.left_bottom() + Vec2::new(10.0, -1.0),
                                                     rect.right_bottom() + Vec2::new(-10.0, -1.0),
                                                 ],
-                                                Stroke::new(2.0_f32, GREEN),
+                                                Stroke::new(
+                                                    2.0_f32,
+                                                    if right_tab { BLUE } else { GREEN },
+                                                ),
                                             );
                                         }
                                         paint_icon(
@@ -1635,7 +1772,15 @@ impl NexusApp {
                                         }
                                         close_response.on_hover_text("Fermer la session");
                                         if response.clicked() {
-                                            activate = Some(index);
+                                            if response.double_clicked()
+                                                && self.last_clicked_tab.as_deref()
+                                                    == Some(tab.id.as_str())
+                                            {
+                                                rename = Some(tab.id.clone());
+                                            } else {
+                                                activate = Some(index);
+                                            }
+                                            clicked_tab = Some(tab.id.clone());
                                         }
                                         response
                                             .on_hover_text(format!(
@@ -1643,6 +1788,30 @@ impl NexusApp {
                                                 tab.title, tab.profile.host, tab.profile.port
                                             ))
                                             .context_menu(|ui| {
+                                                if ui.button("Renommer l’onglet…").clicked() {
+                                                    rename = Some(tab.id.clone());
+                                                    ui.close();
+                                                }
+                                                ui.separator();
+                                                if !primary_tab
+                                                    && ui.button("Afficher à gauche").clicked()
+                                                {
+                                                    show_left = Some(index);
+                                                    ui.close();
+                                                }
+                                                if !primary_tab
+                                                    && ui.button("Afficher à droite").clicked()
+                                                {
+                                                    show_right = Some(index);
+                                                    ui.close();
+                                                }
+                                                if right_tab
+                                                    && ui.button("Retirer du partage").clicked()
+                                                {
+                                                    unsplit = true;
+                                                    ui.close();
+                                                }
+                                                ui.separator();
                                                 if ui.button("Reconnecter").clicked() {
                                                     reconnect = Some(index);
                                                     ui.close();
@@ -1657,25 +1826,67 @@ impl NexusApp {
                             });
                         });
                 });
+                if split_width > 0.0 {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(split_rect), |ui| {
+                        let response = ui.add_sized(
+                            [split_width, 32.0],
+                            egui::Button::selectable(self.secondary.is_some(), "Côte à côte ▾"),
+                        );
+                        egui::Popup::menu(&response).show(|ui| {
+                            ui.set_min_width(220.0);
+                            ui.label("Afficher à droite");
+                            for (index, tab) in self.tabs.iter().enumerate() {
+                                if self.active != Some(index) && ui.button(&tab.title).clicked() {
+                                    show_right = Some(index);
+                                    ui.close();
+                                }
+                            }
+                            if self.secondary.is_some() {
+                                ui.separator();
+                                if ui.button("Une seule vue").clicked() {
+                                    unsplit = true;
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
+                }
                 ui.scope_builder(egui::UiBuilder::new().max_rect(add_rect), |ui| {
                     if icon_button(ui, Icon::Plus, "Nouvelle session · Ctrl+K").clicked() {
                         self.palette = true;
                         self.palette_focus = true;
                     }
                 });
+                if ctx.input(|input| input.pointer.any_click()) {
+                    self.last_clicked_tab = clicked_tab;
+                }
                 if let Some(index) = close {
                     self.request_tab_close(index, false, ctx);
                 } else if let Some(index) = reconnect {
                     self.request_tab_close(index, true, ctx);
-                } else if let Some(index) = activate {
-                    self.active = Some(index);
-                    self.page = Page::Session;
+                } else if let Some(id) = rename {
+                    self.begin_tab_rename(&id);
+                } else if let Some(index) = show_right {
+                    if self.active.is_none() {
+                        self.active = (0..self.tabs.len()).find(|other| *other != index);
+                    }
+                    if self.active != Some(index) {
+                        self.secondary = Some(index);
+                        self.split_horizontal = false;
+                        self.activate_tab(index);
+                    }
+                } else if let Some(index) = show_left {
                     if self.secondary == Some(index) {
-                        self.secondary = None;
+                        self.secondary = self.active;
                     }
-                    if let SessionView::Ssh(session) = &mut self.tabs[index].view {
-                        session.request_input_focus();
+                    self.activate_tab(index);
+                } else if unsplit {
+                    self.secondary = None;
+                    if let Some(index) = self.active {
+                        self.activate_tab(index);
                     }
+                } else if let Some(index) = activate {
+                    self.activate_tab(index);
                 }
             });
     }
@@ -1740,7 +1951,7 @@ impl NexusApp {
         let title = if self.secondary.is_some() {
             tab.title.clone()
         } else {
-            endpoint.clone()
+            format!("{} · {}", tab.title, endpoint)
         };
         let width = ui.available_width();
         let control_width = match protocol {
@@ -1851,6 +2062,7 @@ impl NexusApp {
         let mut close = false;
         let mut snippets = false;
         let mut workspace = false;
+        let mut rename = false;
         ui.scope_builder(
             egui::UiBuilder::new()
                 .max_rect(session_menu_rect)
@@ -1870,6 +2082,10 @@ impl NexusApp {
                     }
                     if ui.button("Enregistrer l’espace de travail…").clicked() {
                         workspace = true;
+                        ui.close();
+                    }
+                    if ui.button("Renommer l’onglet…").clicked() {
+                        rename = true;
                         ui.close();
                     }
                     ui.separator();
@@ -1920,6 +2136,9 @@ impl NexusApp {
         }
         if workspace {
             self.new_workspace_from_tabs();
+        }
+        if rename {
+            self.begin_tab_rename(&id);
         }
         self.page == Page::Session && self.tabs.get(index).is_some_and(|tab| tab.id == id)
     }
@@ -2033,6 +2252,7 @@ impl eframe::App for NexusApp {
             }
         }
         self.trust_requests();
+        self.poll_hidden_ssh_sessions();
         for tunnel in self.active_tunnels.values_mut() {
             tunnel.poll();
         }
@@ -2124,6 +2344,7 @@ impl eframe::App for NexusApp {
                 });
             });
         self.editor_modal(ctx);
+        self.tab_rename_modal(ctx);
         self.auth_modal(ctx);
         self.entities_modals(ctx);
         self.confirmation_modals(ctx);

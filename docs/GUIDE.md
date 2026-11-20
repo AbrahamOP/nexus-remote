@@ -12,6 +12,14 @@ Extraire le ZIP, fermer l’ancienne version et ouvrir `NexusRemote.exe` sans ar
 
 Le carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`. Les anciennes connexions sont conservées. Lors de la première mise à jour depuis la version 0.1, la première écriture garde une copie exacte de cet ancien fichier dans `connections.v0.1-backup.json`. Un fichier invalide est conservé ; une seule instance peut ouvrir le même carnet.
 
+## Onglets SSH et vue côte à côte 0.3.7
+
+Chaque onglet SSH garde sa connexion pendant que vous travaillez dans un autre onglet. Nexus traite aussi la sortie des onglets masqués par portions bornées à chaque rafraîchissement ; une file de sortie pleine ne doit donc plus figer un shell tmux uniquement parce que son onglet est inactif. Le shell tmux reste géré par le serveur Linux : fermer l’onglet Nexus coupe la connexion SSH, mais ne remplace pas les commandes de gestion de tmux.
+
+Double-cliquer sur un onglet, ou ouvrir son menu au clic droit puis choisir **Renommer l’onglet…**, change son titre pour cette session seulement. Le nom de l’hôte dans le carnet ne change pas. Le titre est conservé lors de **Reconnecter**, puis disparaît avec la session lorsque l’application est fermée.
+
+Le bouton **Côte à côte** au-dessus des onglets permet de choisir la session à placer à droite. Le menu au clic droit d’un onglet permet aussi de l’afficher à gauche ou à droite. Cliquer l’onglet du volet droit le garde dans ce volet. Une nouvelle connexion remplace la vue de gauche sans fermer la session de droite ; visiter le coffre conserve la disposition pour le retour aux sessions. Le menu **Session** permet toujours d’empiler les deux vues verticalement ou de revenir à une seule vue.
+
 ## Menu contextuel SFTP 0.3.6
 
 Un clic droit sur une ligne de la vue SFTP sélectionne l’élément visé et affiche les actions adaptées au panneau local ou distant. Les commandes du menu utilisent les mêmes contrôles que les boutons de la vue : seuls les fichiers ordinaires sont transférés, les liens symboliques ne sont pas transférés, l’édition distante reste limitée à 1 Mo et la suppression distante demande une confirmation. Aucun dossier n’est transféré de manière récursive ; aucun fichier local n’est supprimé par ce menu.
@@ -28,7 +36,7 @@ Cette version corrige la reprise du clavier après un passage entre RDP et SSH. 
 
 Sélectionner un onglet SSH permet de reprendre directement la saisie, sans clic supplémentaire dans le terminal. Si sa recherche est ouverte, le texte reste destiné au champ de recherche. Les menus, les fenêtres modales et les autres panneaux conservent leurs protections contre l’envoi involontaire de texte au shell.
 
-L’interface reste celle de la version 0.3.2. Le format du carnet, les profils et les identifiants enregistrés restent inchangés. Le redémarrage nécessaire pour charger le correctif déconnecte les sessions ouvertes ; il ne transfère pas leurs onglets ou leur shell vers la nouvelle version.
+Le format du carnet, les profils et les identifiants enregistrés restent inchangés. Le redémarrage nécessaire pour charger le correctif déconnecte les sessions ouvertes ; il ne transfère pas leurs onglets ou leur shell vers la nouvelle version.
 
 ## Vues de session 0.3.2
 
@@ -82,7 +90,7 @@ L’import JSON et l’import de blocs explicites OpenSSH `Host` sont disponible
 
 Nexus Remote n’est pas affilié à Termius. La synchronisation cloud, la collaboration d’équipe, Mosh/Telnet/série, FIDO2, les chaînes de rebond SSH, SOCKS dynamique, les transferts récursifs de dossiers et l’autocomplétion par IA ne sont pas implémentés.
 
-SSH, SFTP et tunnels sont testés avec un vrai serveur localhost et des clés Ed25519 éphémères. Le contrôle RDP natif est testé sans connexion ; une session distante complète reste à valider sur votre infrastructure. Voir le rapport de validation livré.
+SSH, SFTP et tunnels sont testés avec un vrai serveur localhost et des clés Ed25519 éphémères. Le contrôle RDP natif est testé sans connexion ; une session distante complète reste à valider sur votre infrastructure. Le rapport de sécurité livré concerne la version 0.3.5 et reste une référence historique.
 
 ## Compiler
 

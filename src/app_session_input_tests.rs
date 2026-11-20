@@ -29,6 +29,7 @@ fn render(app: &mut NexusApp, ctx: &egui::Context, events: Vec<egui::Event>) -> 
                     let enabled = !app.has_modal();
                     ui.add_enabled_ui(enabled, |ui| app.session_area(ui, ctx));
                 });
+            app.tab_rename_modal(ctx);
         },
     )
 }
@@ -213,6 +214,22 @@ fn actual_session_canvas_receives_text_after_a_mouse_click() {
     );
     assert_eq!(input(&mut app, 0), b"saisie-apres-clic");
     assert!(input(&mut app, 1).is_empty());
+    assert_no_side_effects(&app);
+}
+
+#[test]
+fn double_click_renames_only_when_both_clicks_hit_the_same_tab() {
+    let (mut app, ctx) = fixture();
+    let output = settle(&mut app, &ctx);
+    let position = tab_position(&output, "Session A");
+    click(&mut app, &ctx, position);
+    assert!(app.tab_rename.is_none());
+    click(&mut app, &ctx, position);
+    assert_eq!(
+        app.tab_rename.as_ref().map(|rename| rename.id.as_str()),
+        Some("session-layout-tab-0")
+    );
+    assert_eq!(app.active, Some(0));
     assert_no_side_effects(&app);
 }
 
@@ -467,6 +484,27 @@ fn split_ssh_views_send_text_only_to_the_clicked_terminal() {
     );
     assert_eq!(input(&mut app, 0), b"pane-gauche");
     assert!(input(&mut app, 1).is_empty());
+    assert_no_side_effects(&app);
+}
+
+#[test]
+fn typing_a_new_tab_name_stays_in_the_modal_and_never_reaches_ssh() {
+    let (mut app, ctx) = fixture();
+    settle(&mut app, &ctx);
+    let id = app.tabs[0].id.clone();
+    app.begin_tab_rename(&id);
+    for _ in 0..2 {
+        render(&mut app, &ctx, Vec::new());
+    }
+    let output = render(
+        &mut app,
+        &ctx,
+        vec![egui::Event::Text("tmux-personnel".into())],
+    );
+    assert!(output_has_text(&output, "tmux-personnel"));
+    assert!(input(&mut app, 0).is_empty());
+    assert!(input(&mut app, 1).is_empty());
+    assert_eq!(app.tabs[0].profile.name, app.store.state.profiles[0].name);
     assert_no_side_effects(&app);
 }
 

@@ -9,7 +9,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, SyncSender, TrySendError},
+        mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
     },
     thread,
     time::{Duration, Instant},
@@ -19,6 +19,10 @@ use zeroize::Zeroize;
 const BG: Color32 = crate::ui::SUNKEN;
 const FG: Color32 = crate::ui::TEXT;
 const MAX_PASTE: usize = 1024 * 1024;
+const MAX_UPDATES_PER_POLL: usize = 64;
+const MAX_OUTPUT_BYTES_PER_POLL: usize = 128 * 1024;
+const OUTPUT_CHUNK_BYTES: usize = 2048;
+const MAX_POLL_TIME: Duration = Duration::from_millis(3);
 
 enum Command {
     Input(Vec<u8>),
@@ -37,10 +41,12 @@ pub struct TerminalSession {
     cancel: Arc<AtomicBool>,
     status: String,
     connected: bool,
+    closed_update_received: bool,
     size: (u16, u16),
     selection: Option<((u16, u16), (u16, u16))>,
     pending_paste: Option<String>,
     query_tail: VecDeque<u8>,
+    pending_output: Option<(Vec<u8>, usize)>,
     first_focus: bool,
     focus_requested: bool,
     font_size: f32,
@@ -50,6 +56,8 @@ pub struct TerminalSession {
     focus_search: bool,
     #[cfg(test)]
     _offline_commands: Option<Receiver<Command>>,
+    #[cfg(test)]
+    offline_updates: Option<SyncSender<Update>>,
 }
 
 impl TerminalSession {
@@ -85,10 +93,12 @@ impl TerminalSession {
             cancel,
             status: "Connexion SSH · vérification du serveur…".into(),
             connected: false,
+            closed_update_received: false,
             size: (30, 100),
             selection: None,
             pending_paste: None,
             query_tail: VecDeque::new(),
+            pending_output: None,
             first_focus: true,
             focus_requested: false,
             font_size: 14.0,
@@ -98,13 +108,15 @@ impl TerminalSession {
             focus_search: false,
             #[cfg(test)]
             _offline_commands: None,
+            #[cfg(test)]
+            offline_updates: None,
         }
     }
 
     #[cfg(test)]
     fn offline_pair() -> (Self, Receiver<Command>) {
         let (commands, receiver) = mpsc::sync_channel(256);
-        let (_, updates) = mpsc::sync_channel(1);
+        let (update_sender, updates) = mpsc::sync_channel(128);
         (
             Self {
                 parser: vt100::Parser::new(24, 80, 100),
@@ -113,10 +125,12 @@ impl TerminalSession {
                 cancel: Arc::new(AtomicBool::new(false)),
                 status: "Fixture".into(),
                 connected: true,
+                closed_update_received: false,
                 size: (24, 80),
                 selection: None,
                 pending_paste: None,
                 query_tail: VecDeque::new(),
+                pending_output: None,
                 first_focus: true,
                 focus_requested: false,
                 font_size: 14.0,
@@ -125,6 +139,7 @@ impl TerminalSession {
                 search: String::new(),
                 focus_search: false,
                 _offline_commands: None,
+                offline_updates: Some(update_sender),
             },
             receiver,
         )
@@ -152,6 +167,18 @@ impl TerminalSession {
             }
         }
         input
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_offline_output(&mut self, bytes: &[u8]) {
+        assert!(
+            self.offline_updates
+                .as_ref()
+                .expect("offline terminal update sender")
+                .try_send(Update::Output(bytes.to_vec()))
+                .is_ok(),
+            "offline terminal update queue is full"
+        );
     }
 
     pub fn status(&self) -> &str {
@@ -254,55 +281,102 @@ impl TerminalSession {
         }
     }
 
-    fn process_updates(&mut self) {
-        for _ in 0..64 {
-            let Ok(update) = self.updates.try_recv() else {
-                break;
-            };
-            match update {
-                Update::Connected => {
-                    self.connected = true;
-                    self.status = "Connecté · SSH chiffré".into();
-                    self.send(Command::Resize(self.size.1, self.size.0));
+    /// Drain SSH output even when the tab is hidden. The per-call budget keeps
+    /// several busy tmux sessions from monopolizing the UI thread.
+    pub fn poll_updates(&mut self) {
+        let started = Instant::now();
+        let mut processed = 0;
+        let mut received = 0;
+        while processed < MAX_OUTPUT_BYTES_PER_POLL && started.elapsed() < MAX_POLL_TIME {
+            if self.pending_output.is_none() {
+                if received >= MAX_UPDATES_PER_POLL {
+                    break;
                 }
-                Update::Output(data) => {
-                    // Processing incrementally makes DSR replies describe the exact cursor
-                    // position at the query, including queries split between packets.
-                    for byte in data {
-                        self.parser.process(&[byte]);
-                        self.query_tail.push_back(byte);
-                        if self.query_tail.len() > 8 {
-                            self.query_tail.pop_front();
+                let update = match self.updates.try_recv() {
+                    Ok(update) => update,
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        if !self.closed_update_received {
+                            self.connected = false;
+                            self.status = "Le processus de la session SSH s’est interrompu.".into();
+                            self.closed_update_received = true;
                         }
-                        let query = {
-                            let tail = self.query_tail.make_contiguous();
-                            if tail.ends_with(b"\x1b[6n") {
-                                1
-                            } else if tail.ends_with(b"\x1b[5n") {
-                                2
-                            } else if tail.ends_with(b"\x1b[c") || tail.ends_with(b"\x1b[0c") {
-                                3
-                            } else {
-                                0
-                            }
-                        };
-                        if query == 1 {
-                            let (row, col) = self.parser.screen().cursor_position();
-                            self.send(Command::Input(
-                                format!("\x1b[{};{}R", row + 1, col + 1).into_bytes(),
-                            ));
-                        } else if query == 2 {
-                            self.send(Command::Input(b"\x1b[0n".to_vec()));
-                        } else if query == 3 {
-                            self.send(Command::Input(b"\x1b[?1;2c".to_vec()));
-                        }
+                        break;
+                    }
+                };
+                received += 1;
+                match update {
+                    Update::Connected => {
+                        self.connected = true;
+                        self.status = "Connecté · SSH chiffré".into();
+                        self.send(Command::Resize(self.size.1, self.size.0));
+                        continue;
+                    }
+                    Update::Output(data) => self.pending_output = Some((data, 0)),
+                    Update::Closed(message) => {
+                        self.connected = false;
+                        self.status = message;
+                        self.closed_update_received = true;
+                        continue;
                     }
                 }
-                Update::Closed(message) => {
-                    self.connected = false;
-                    self.status = message;
-                }
             }
+            let Some((data, mut offset)) = self.pending_output.take() else {
+                continue;
+            };
+            let end = data
+                .len()
+                .min(offset + (MAX_OUTPUT_BYTES_PER_POLL - processed).min(OUTPUT_CHUNK_BYTES));
+            self.process_output_chunk(&data[offset..end]);
+            processed += end - offset;
+            offset = end;
+            if offset < data.len() {
+                self.pending_output = Some((data, offset));
+                continue;
+            }
+        }
+    }
+
+    fn process_output_chunk(&mut self, bytes: &[u8]) {
+        // Feed the parser in slices, stopping at each terminal query so a DSR
+        // reply observes the exact cursor position at that point in the stream.
+        // query_tail also recognizes requests split across worker messages.
+        let mut start = 0;
+        for (index, &byte) in bytes.iter().enumerate() {
+            self.query_tail.push_back(byte);
+            if self.query_tail.len() > 8 {
+                self.query_tail.pop_front();
+            }
+            let query = {
+                let tail = self.query_tail.make_contiguous();
+                if tail.ends_with(b"\x1b[6n") {
+                    1
+                } else if tail.ends_with(b"\x1b[5n") {
+                    2
+                } else if tail.ends_with(b"\x1b[c") || tail.ends_with(b"\x1b[0c") {
+                    3
+                } else {
+                    0
+                }
+            };
+            if query == 0 {
+                continue;
+            }
+            self.parser.process(&bytes[start..=index]);
+            start = index + 1;
+            if query == 1 {
+                let (row, col) = self.parser.screen().cursor_position();
+                self.send(Command::Input(
+                    format!("\x1b[{};{}R", row + 1, col + 1).into_bytes(),
+                ));
+            } else if query == 2 {
+                self.send(Command::Input(b"\x1b[0n".to_vec()));
+            } else {
+                self.send(Command::Input(b"\x1b[?1;2c".to_vec()));
+            }
+        }
+        if start < bytes.len() {
+            self.parser.process(&bytes[start..]);
         }
     }
 
@@ -437,7 +511,7 @@ impl TerminalSession {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.process_updates();
+        self.poll_updates();
         let accepts_input = ui.is_enabled()
             && ui.memory(|memory| memory.is_above_modal_layer(ui.layer_id()))
             && !egui::Popup::is_any_open(ui.ctx());
@@ -1117,6 +1191,82 @@ mod tests {
     use super::*;
     fn offline_terminal() -> (TerminalSession, Receiver<Command>) {
         TerminalSession::offline_pair()
+    }
+
+    #[test]
+    fn hidden_terminal_poll_drains_output_and_answers_split_dsr() {
+        let (mut terminal, commands) = offline_terminal();
+        let (sender, updates) = mpsc::sync_channel(1);
+        terminal.updates = updates;
+        terminal.offline_updates = Some(sender.clone());
+        terminal.inject_offline_output(b"tmux-ready\x1b[");
+        assert!(
+            matches!(
+                sender.try_send(Update::Output(b"6n".to_vec())),
+                Err(TrySendError::Full(_))
+            ),
+            "the bounded update channel must apply backpressure"
+        );
+
+        terminal.poll_updates(); // No terminal UI or selected tab is rendered.
+        assert!(terminal.screen_text().contains("tmux-ready"));
+        assert!(sender.try_send(Update::Output(b"6n".to_vec())).is_ok());
+        terminal.poll_updates();
+        assert!(
+            matches!(commands.try_recv(), Ok(Command::Input(bytes)) if bytes == b"\x1b[1;11R"),
+            "DSR reply must reflect the cursor after the split output"
+        );
+        assert!(terminal.connected());
+    }
+
+    #[test]
+    fn large_hidden_output_is_resumed_without_losing_the_tail() {
+        let (mut terminal, commands) = offline_terminal();
+        let mut output = vec![b'x'; MAX_OUTPUT_BYTES_PER_POLL + OUTPUT_CHUNK_BYTES];
+        output.extend_from_slice(b"\r\nEND-OF-TMUX\x1b[6n");
+        terminal.inject_offline_output(&output);
+        terminal.poll_updates();
+        assert!(
+            terminal.pending_output.is_some(),
+            "one poll must be bounded"
+        );
+        let mut polls = 1;
+        for _ in 0..31 {
+            if terminal.pending_output.is_none() {
+                break;
+            }
+            terminal.poll_updates();
+            polls += 1;
+        }
+        assert!(
+            terminal.pending_output.is_none(),
+            "output must drain within 32 bounded polls, needed at least {polls}"
+        );
+        assert!(terminal.screen_text().contains("END-OF-TMUX"));
+        assert!(
+            matches!(commands.try_recv(), Ok(Command::Input(bytes)) if bytes.starts_with(b"\x1b[") && bytes.ends_with(b"R"))
+        );
+    }
+
+    #[test]
+    fn missing_worker_close_is_visible_without_overwriting_a_reported_reason() {
+        let (mut missing, _) = offline_terminal();
+        missing.offline_updates = None;
+        missing.poll_updates();
+        assert!(!missing.connected());
+        assert!(missing.status().contains("s’est interrompu"));
+
+        let (mut reported, _) = offline_terminal();
+        let sender = reported.offline_updates.take().unwrap();
+        assert!(
+            sender
+                .send(Update::Closed("Connexion fermée par le serveur.".into()))
+                .is_ok()
+        );
+        drop(sender);
+        reported.poll_updates();
+        assert_eq!(reported.status(), "Connexion fermée par le serveur.");
+        assert!(!reported.connected());
     }
 
     #[test]
