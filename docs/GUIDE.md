@@ -54,7 +54,7 @@ La palette reprend la référence [GoaCloud UI, carte produit GC-CRD-01](https:/
 
 Les hôtes utilisent désormais des tuiles plus compactes : icône à gauche, nom et adresse rapprochés, compte visible et commandes en pied. Les boutons ordinaires mesurent 32 px, les badges de protocole 22 px. Les notes restent accessibles dans les détails et les infobulles. La barre de recherche, les filtres, le changement de vue et la grille partagent un budget de largeur qui conserve la marge droite lors d’un redimensionnement. Les alignements du pied de la barre latérale et de la barre d’état sont repris.
 
-Ces ajustements s’appuient aussi sur l’analyse des composants livrés dans une installation locale de Termius 10.4.0. Le contrôle automatique de sa fenêtre étant bloqué, il s’agit d’une analyse de ses ressources d’interface, pas d’une observation de l’écran actif. Le rapport fourni dans les archives Windows précise les mesures et leurs limites ; il n’est pas inclus dans ce dépôt. Aucun code, icône ou police propriétaire de Termius n’est réutilisé.
+Ces ajustements s’appuient aussi sur l’analyse des composants livrés dans une installation locale de Termius 10.4.0. Le contrôle automatique de sa fenêtre étant bloqué, il s’agit d’une analyse de ses ressources d’interface, pas d’une observation de l’écran actif. Aucun code, icône ou police propriétaire de Termius n’est réutilisé.
 
 Cette version conserve les fonctions des versions 0.2, 0.3 et 0.3.1 ainsi que le même format de carnet. Un dossier fourni avec `--data-dir CHEMIN` ouvre un carnet distinct réservé aux essais ; il ne sélectionne pas le carnet personnel habituel.
 
@@ -90,7 +90,7 @@ L’import JSON et l’import de blocs explicites OpenSSH `Host` sont disponible
 
 Nexus Remote n’est pas affilié à Termius. La synchronisation cloud, la collaboration d’équipe, Mosh/Telnet/série, FIDO2, les chaînes de rebond SSH, SOCKS dynamique, les transferts récursifs de dossiers et l’autocomplétion par IA ne sont pas implémentés.
 
-SSH, SFTP et tunnels sont testés avec un vrai serveur localhost et des clés Ed25519 éphémères. Le contrôle RDP natif est testé sans connexion ; une session distante complète reste à valider sur votre infrastructure. Le rapport de sécurité livré concerne la version 0.3.5 et reste une référence historique.
+SSH, SFTP et tunnels sont testés avec un vrai serveur localhost et des clés Ed25519 éphémères. Le contrôle RDP natif est testé sans connexion ; une session distante complète reste à valider sur votre infrastructure.
 
 ## Compiler
 
