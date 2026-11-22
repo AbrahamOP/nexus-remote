@@ -37,7 +37,9 @@ Pour travailler dans plusieurs shells, cliquez sur **Côte à côte** au-dessus 
 
 **Configuration requise :** Windows 10 ou 11 en 64 bits, avec un pilote prenant en charge OpenGL 3.3.
 
-Pour générer l’application, suivez les instructions [Compiler depuis les sources](#compiler-depuis-les-sources), puis ouvrez `target\release\nexus-remote.exe`.
+**Télécharger l’application :** ouvrez la [Release Nexus Remote 0.3.8](https://github.com/AbrahamOP/nexus-remote/releases/tag/v0.3.8), téléchargez directement `NexusRemote.exe` et lancez-le. L’archive `Nexus-Remote-0.3.8-Windows-x64.zip` contient aussi le guide et les licences. Pour une mise à jour, fermez d’abord la version précédente afin de ne pas interrompre une session en cours. Votre carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`.
+
+Vous pouvez aussi [compiler depuis les sources](#compiler-depuis-les-sources) et lancer `target\release\nexus-remote.exe`.
 
 L’application est portable et l’exécutable n’est pas signé. Son interface utilise Rust et egui/eframe ; aucun environnement Electron, WebView ou .NET n’est nécessaire. Le composant RDP utilise les fonctions intégrées de Windows.
 
