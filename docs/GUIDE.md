@@ -12,6 +12,10 @@ Extraire le ZIP, fermer l’ancienne version et ouvrir `NexusRemote.exe` sans ar
 
 Le carnet reste dans `%LOCALAPPDATA%\NexusRemoteRust`. Les anciennes connexions sont conservées. Lors de la première mise à jour depuis la version 0.1, la première écriture garde une copie exacte de cet ancien fichier dans `connections.v0.1-backup.json`. Un fichier invalide est conservé ; une seule instance peut ouvrir le même carnet.
 
+## Fenêtre intégrée 0.3.8
+
+L’en-tête Nexus remplace la barre de titre Windows. Les trois boutons à droite réduisent, agrandissent ou restaurent, et ferment la fenêtre. Faites glisser le logo ou l’espace libre de l’en-tête pour déplacer Nexus ; utilisez les bords pour le redimensionner. Sur Windows 11, le système arrondit les coins de la fenêtre et trace un contour de 1 px. Sur Windows 10, Nexus trace un contour de 1 px avec des coins carrés. Les coins redeviennent carrés quand la fenêtre est agrandie. `Alt+F4` reste disponible. La fermeture conserve la confirmation des modifications non enregistrées.
+
 ## Onglets SSH et vue côte à côte 0.3.7
 
 Chaque onglet SSH garde sa connexion pendant que vous travaillez dans un autre onglet. Nexus traite aussi la sortie des onglets masqués par portions bornées à chaque rafraîchissement ; une file de sortie pleine ne doit donc plus figer un shell tmux uniquement parce que son onglet est inactif. Le shell tmux reste géré par le serveur Linux : fermer l’onglet Nexus coupe la connexion SSH, mais ne remplace pas les commandes de gestion de tmux.

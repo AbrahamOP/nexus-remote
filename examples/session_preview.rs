@@ -38,15 +38,15 @@ fn main() -> eframe::Result {
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_title("Nexus Remote — Aperçu hors ligne")
+                .with_decorations(false)
+                .with_resizable(true)
                 .with_inner_size([1320.0, 850.0])
                 .with_min_inner_size([1040.0, 700.0]),
             ..Default::default()
         },
         Box::new(move |cc| {
             Ok(Box::new(app::NexusApp::offline_session_preview(
-                &cc.egui_ctx,
-                rdp,
-                split,
+                cc, rdp, split,
             )))
         }),
     )

@@ -40,6 +40,8 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(window_title)
+            .with_decorations(false)
+            .with_resizable(true)
             .with_icon(
                 eframe::icon_data::from_png_bytes(include_bytes!("../assets/nexus.png"))
                     .expect("Icône intégrée"),

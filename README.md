@@ -6,7 +6,9 @@
 
 Nexus Remote est un gestionnaire de connexions **SSH, SFTP et RDP pour Windows**, écrit en Rust. Organisez vos machines, ouvrez plusieurs sessions et retrouvez vos accès dans une interface native en français. Le carnet est conservé sur votre PC, sans compte ni service cloud à configurer.
 
-![Carnet d’hôtes de Nexus Remote](docs/images/coffre.jpg)
+La fenêtre utilise l’en-tête Nexus à la place de la barre de titre Windows. Les boutons réduire, agrandir/restaurer et fermer sont à droite ; faites glisser le logo ou l’espace libre de l’en-tête pour déplacer la fenêtre. Ses bords restent redimensionnables, et `Alt+F4` ferme l’application comme avant. Sur Windows 11, les coins externes sont arrondis et soulignés par un contour natif de 1 px ; Windows 10 conserve un contour de 1 px avec des coins carrés. Windows affiche aussi des coins carrés quand la fenêtre est agrandie.
+
+![Carnet d’hôtes de Nexus Remote](docs/images/coffre.png)
 
 ## Un espace pour vos machines
 
@@ -25,7 +27,7 @@ Pour travailler dans plusieurs shells, cliquez sur **Côte à côte** au-dessus 
 
 | Terminal SSH | Bureau RDP |
 | --- | --- |
-| ![Interface du terminal SSH](docs/images/session-ssh.jpg) | ![Interface de session RDP](docs/images/session-rdp.jpg) |
+| ![Interface du terminal SSH](docs/images/session-ssh.png) | ![Interface de session RDP](docs/images/session-rdp.png) |
 
 </details>
 

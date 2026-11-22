@@ -137,6 +137,112 @@ fn render_catalog_input(
     )
 }
 
+fn render_header_input(
+    app: &mut NexusApp,
+    ctx: &egui::Context,
+    width: f32,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
+    ctx.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(width, 850.0),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ctx| app.header(ctx),
+    )
+}
+
+fn click_header(
+    app: &mut NexusApp,
+    ctx: &egui::Context,
+    width: f32,
+    position: egui::Pos2,
+) -> egui::FullOutput {
+    let mut output = None;
+    for pressed in [true, false] {
+        output = Some(render_header_input(
+            app,
+            ctx,
+            width,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        ));
+    }
+    output.expect("Both click frames must render")
+}
+
+#[test]
+fn borderless_window_controls_work_at_the_minimum_width() {
+    let width = 1040.0;
+    for (position, expected) in [
+        (egui::pos2(922.0, 26.0), "minimize"),
+        (egui::pos2(962.0, 26.0), "maximize"),
+        (egui::pos2(1002.0, 26.0), "close"),
+    ] {
+        let mut app = offline_catalog();
+        let ctx = egui::Context::default();
+        design::apply_theme(&ctx);
+        for _ in 0..3 {
+            render_header_input(&mut app, &ctx, width, Vec::new());
+        }
+        let output = click_header(&mut app, &ctx, width, position);
+        let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+        assert!(
+            commands.iter().any(|command| match expected {
+                "minimize" => matches!(command, egui::ViewportCommand::Minimized(true)),
+                "maximize" => matches!(command, egui::ViewportCommand::Maximized(true)),
+                "close" => matches!(command, egui::ViewportCommand::Close),
+                _ => false,
+            }),
+            "Window control {expected} did not receive its click at {position:?}: {commands:?}",
+        );
+        assert!(app.launch_queue.is_empty() && app.auth.is_none());
+    }
+}
+
+#[test]
+fn brand_and_empty_header_start_native_window_drag_on_press() {
+    let width = 1040.0;
+    for position in [egui::pos2(70.0, 26.0), egui::pos2(540.0, 26.0)] {
+        let mut app = offline_catalog();
+        let ctx = egui::Context::default();
+        design::apply_theme(&ctx);
+        render_header_input(&mut app, &ctx, width, Vec::new());
+        let output = render_header_input(
+            &mut app,
+            &ctx,
+            width,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, egui::ViewportCommand::StartDrag)),
+            "A press in the header drag region did not start window dragging at {position:?}: {commands:?}",
+        );
+    }
+}
+
 fn collect_host_card_rects(shape: &egui::epaint::Shape, cards: &mut Vec<egui::Rect>) {
     match shape {
         egui::epaint::Shape::Rect(shape)

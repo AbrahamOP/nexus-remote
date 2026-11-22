@@ -39,6 +39,138 @@ fn muted(ui: &mut egui::Ui, text: impl Into<String>) {
     design::label(ui, text);
 }
 
+fn native_hwnd(cc: &eframe::CreationContext<'_>) -> isize {
+    cc.window_handle()
+        .ok()
+        .and_then(|handle| match handle.as_raw() {
+            RawWindowHandle::Win32(window) => Some(window.hwnd.get()),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+fn configure_native_window_frame(hwnd: isize) -> bool {
+    use windows::Win32::{
+        Foundation::{COLORREF, HWND},
+        Graphics::Dwm::{
+            DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+        },
+    };
+
+    if hwnd == 0 {
+        return false;
+    }
+
+    let hwnd = HWND(hwnd as *mut std::ffi::c_void);
+    let corners = DWMWCP_ROUND;
+    let border =
+        COLORREF(u32::from(LINE.r()) | (u32::from(LINE.g()) << 8) | (u32::from(LINE.b()) << 16));
+    // DWM draws the one-pixel outer border and clips the actual window corners.
+    // Older Windows versions can ignore these optional attributes.
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::from_ref(&corners).cast(),
+            std::mem::size_of_val(&corners) as u32,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            std::ptr::from_ref(&border).cast(),
+            std::mem::size_of_val(&border) as u32,
+        )
+        .is_ok()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_native_window_frame(_hwnd: isize) -> bool {
+    false
+}
+
+#[derive(Clone, Copy)]
+enum WindowControl {
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
+}
+
+fn window_control(ui: &mut egui::Ui, control: WindowControl) -> egui::Response {
+    let label = match control {
+        WindowControl::Minimize => "Réduire la fenêtre",
+        WindowControl::Maximize => "Agrandir la fenêtre",
+        WindowControl::Restore => "Restaurer la fenêtre",
+        WindowControl::Close => "Fermer la fenêtre",
+    };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(40.0, 34.0), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
+    if response.hovered() {
+        let fill = if matches!(control, WindowControl::Close) {
+            tint(DANGER, TOP, 0.24)
+        } else {
+            RAISED
+        };
+        ui.painter().rect_filled(rect, 6.0, fill);
+    }
+    let color = if matches!(control, WindowControl::Close) && response.hovered() {
+        DANGER
+    } else {
+        MUTED
+    };
+    let center = rect.center();
+    let stroke = Stroke::new(1.5_f32, color);
+    match control {
+        WindowControl::Minimize => {
+            ui.painter().line_segment(
+                [center + Vec2::new(-5.5, 3.0), center + Vec2::new(5.5, 3.0)],
+                stroke,
+            );
+        }
+        WindowControl::Maximize | WindowControl::Restore => {
+            let offset = if matches!(control, WindowControl::Restore) {
+                Vec2::new(-2.0, 2.0)
+            } else {
+                Vec2::ZERO
+            };
+            let square = egui::Rect::from_center_size(center + offset, Vec2::new(11.0, 9.0));
+            for (start, end) in [
+                (square.left_top(), square.right_top()),
+                (square.right_top(), square.right_bottom()),
+                (square.right_bottom(), square.left_bottom()),
+                (square.left_bottom(), square.left_top()),
+            ] {
+                ui.painter().line_segment([start, end], stroke);
+            }
+            if matches!(control, WindowControl::Restore) {
+                ui.painter().line_segment(
+                    [center + Vec2::new(0.0, -6.0), center + Vec2::new(7.0, -6.0)],
+                    stroke,
+                );
+                ui.painter().line_segment(
+                    [center + Vec2::new(7.0, -6.0), center + Vec2::new(7.0, 1.0)],
+                    stroke,
+                );
+            }
+        }
+        WindowControl::Close => {
+            ui.painter().line_segment(
+                [center + Vec2::new(-5.0, -5.0), center + Vec2::new(5.0, 5.0)],
+                stroke,
+            );
+            ui.painter().line_segment(
+                [center + Vec2::new(5.0, -5.0), center + Vec2::new(-5.0, 5.0)],
+                stroke,
+            );
+        }
+    }
+    response.on_hover_text(label)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Hosts,
@@ -200,6 +332,7 @@ pub struct NexusApp {
     secondary: Option<usize>,
     split_horizontal: bool,
     hwnd: isize,
+    native_border: bool,
     trust: TrustBroker,
     trust_rx: Receiver<HostKeyRequest>,
     trust_queue: VecDeque<HostKeyRequest>,
@@ -215,14 +348,8 @@ pub struct NexusApp {
 impl NexusApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         design::apply_theme(&cc.egui_ctx);
-        let hwnd = cc
-            .window_handle()
-            .ok()
-            .and_then(|h| match h.as_raw() {
-                RawWindowHandle::Win32(w) => Some(w.hwnd.get()),
-                _ => None,
-            })
-            .unwrap_or(0);
+        let hwnd = native_hwnd(cc);
+        let native_border = configure_native_window_frame(hwnd);
         let args: Vec<String> = std::env::args().collect();
         let data_dir = args
             .iter()
@@ -234,7 +361,9 @@ impl NexusApp {
             Ok(s) => (s, None),
             Err(e) => (Store::empty(), Some(e)),
         };
-        Self::from_store(store, startup_error, hwnd)
+        let mut app = Self::from_store(store, startup_error, hwnd);
+        app.native_border = native_border;
+        app
     }
     fn from_store(store: Store, startup_error: Option<String>, hwnd: isize) -> Self {
         let (tx, rx) = mpsc::channel();
@@ -274,6 +403,7 @@ impl NexusApp {
             secondary: None,
             split_horizontal: false,
             hwnd,
+            native_border: false,
             trust: TrustBroker { requests: tx },
             trust_rx: rx,
             trust_queue: VecDeque::new(),
@@ -288,9 +418,14 @@ impl NexusApp {
         }
     }
     #[cfg(test)]
-    pub fn offline_session_preview(ctx: &egui::Context, rdp: bool, split: bool) -> Self {
-        design::apply_theme(ctx);
+    pub fn offline_session_preview(
+        cc: &eframe::CreationContext<'_>,
+        rdp: bool,
+        split: bool,
+    ) -> Self {
+        design::apply_theme(&cc.egui_ctx);
         let mut app = session_layout_tests::offline_sessions();
+        app.native_border = configure_native_window_frame(native_hwnd(cc));
         for (tab, title) in app.tabs.iter_mut().zip([
             "Linux · Développement",
             "Linux · Maintenance",
@@ -715,31 +850,51 @@ impl NexusApp {
                     .inner_margin(Margin::symmetric(18, 9)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    Frame::new()
-                        .fill(GREEN)
-                        .corner_radius(8)
-                        .inner_margin(Margin::symmetric(9, 4))
-                        .show(ui, |ui| {
-                            ui.label(RichText::new("N").size(20.0).strong().color(TOP));
+                let available = ui.available_rect_before_wrap();
+                let controls = egui::Rect::from_min_max(
+                    egui::pos2(available.right() - 120.0, available.top()),
+                    available.max,
+                );
+                let actions = egui::Rect::from_min_max(
+                    egui::pos2(controls.left() - 328.0, available.top()),
+                    egui::pos2(controls.left() - 8.0, available.bottom()),
+                );
+                let navigation = egui::Rect::from_min_max(
+                    available.min,
+                    egui::pos2(actions.left() - 8.0, available.bottom()),
+                );
+                let navigation_right = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(navigation), |ui| {
+                        ui.horizontal(|ui| {
+                            Frame::new()
+                                .fill(GREEN)
+                                .corner_radius(8)
+                                .inner_margin(Margin::symmetric(9, 4))
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new("N").size(20.0).strong().color(TOP));
+                                });
+                            ui.label(RichText::new("nexus").size(20.0).strong());
+                            ui.add_space(25.0);
+                            for (page, caption) in [
+                                (Page::Hosts, "Coffre"),
+                                (Page::Sftp, "SFTP"),
+                                (Page::Workspaces, "Espaces de travail"),
+                            ] {
+                                if ui
+                                    .add(
+                                        egui::Button::selectable(self.page == page, caption)
+                                            .min_size(Vec2::new(0.0, 34.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    self.set_page(page);
+                                }
+                            }
                         });
-                    ui.label(RichText::new("nexus").size(20.0).strong());
-                    ui.add_space(25.0);
-                    for (page, caption) in [
-                        (Page::Hosts, "Coffre"),
-                        (Page::Sftp, "SFTP"),
-                        (Page::Workspaces, "Espaces de travail"),
-                    ] {
-                        if ui
-                            .add(
-                                egui::Button::selectable(self.page == page, caption)
-                                    .min_size(Vec2::new(0.0, 34.0)),
-                            )
-                            .clicked()
-                        {
-                            self.set_page(page);
-                        }
-                    }
+                        ui.min_rect().right()
+                    })
+                    .inner;
+                ui.scope_builder(egui::UiBuilder::new().max_rect(actions), |ui| {
                     ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                         if ui
                             .button(
@@ -756,6 +911,51 @@ impl NexusApp {
                         }
                     });
                 });
+                let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(controls), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        if window_control(ui, WindowControl::Minimize).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        }
+                        let middle = if maximized {
+                            WindowControl::Restore
+                        } else {
+                            WindowControl::Maximize
+                        };
+                        if window_control(ui, middle).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                        }
+                        if window_control(ui, WindowControl::Close).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    });
+                });
+                let brand_drag = egui::Rect::from_min_max(
+                    available.min,
+                    egui::pos2(available.left() + 115.0, available.bottom()),
+                );
+                let empty_drag = egui::Rect::from_min_max(
+                    egui::pos2(navigation_right + 8.0, available.top()),
+                    egui::pos2(actions.left() - 8.0, available.bottom()),
+                );
+                for (index, region) in [brand_drag, empty_drag].into_iter().enumerate() {
+                    if region.width() < 8.0 {
+                        continue;
+                    }
+                    let response = ui.interact(
+                        region,
+                        ui.id().with(("window_drag", index)),
+                        Sense::click_and_drag(),
+                    );
+                    if response.is_pointer_button_down_on()
+                        && ui.input(|input| {
+                            input.pointer.button_pressed(egui::PointerButton::Primary)
+                        })
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                }
             });
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
@@ -2387,6 +2587,19 @@ impl eframe::App for NexusApp {
         }
         if !self.app_quit_confirmed {
             self.pump_launch(ctx);
+        }
+        if !self.native_border {
+            let scale = ctx.pixels_per_point().max(1.0);
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("window_outline"),
+            ))
+            .rect_stroke(
+                ctx.viewport_rect(),
+                egui::CornerRadius::ZERO,
+                Stroke::new(1.0 / scale, LINE),
+                egui::StrokeKind::Inside,
+            );
         }
         if !self.tabs.is_empty() || !self.active_tunnels.is_empty() || !self.launch_queue.is_empty()
         {
